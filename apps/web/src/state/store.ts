@@ -27,6 +27,7 @@ import {
 } from "./types";
 import { splitByPlane, planeNormalFromRotationDeg } from "../lib/splitEngine";
 import { createKeycapMesh, resolveKeycapParams, DEFAULT_KEYCAP_PARAMS, type KeycapParams } from "@keycap-web/geometry-core/keycap";
+import { loadSavedDefaultParams } from "../lib/keycapDefaults";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type SplitGizmoMode = "translate" | "rotate";
@@ -459,7 +460,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   async addKeycapNode(paramsOverride, positionOverride) {
-    const params: KeycapParams = resolveKeycapParams(paramsOverride ?? {});
+    // Only the "no override given" call (the toolbar's plain + Keycap
+    // button) falls back to the user's saved default -- a caller that
+    // passes an explicit override (e.g. the Legend field's batch-create,
+    // which clones the CURRENT keycap's exact params for each new sibling)
+    // means it precisely, not "start from my usual default".
+    const params: KeycapParams = resolveKeycapParams(paramsOverride ?? loadSavedDefaultParams() ?? {});
     set({ keycapStatus: "generating", keycapError: null });
     try {
       const mesh = await createKeycapMesh(params);

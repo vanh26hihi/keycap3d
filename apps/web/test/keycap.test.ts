@@ -2,6 +2,24 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { computeBoundingBox } from "@keycap-web/geometry-core";
 import { useEditorStore, toComparableProjectState } from "../src/state/store.js";
 import { emptyProjectState } from "../src/state/types.js";
+import { saveDefaultParams, clearSavedDefaultParams } from "../src/lib/keycapDefaults.js";
+import { DEFAULT_KEYCAP_PARAMS } from "@keycap-web/geometry-core/keycap";
+
+/** Same minimal in-memory localStorage stand-in as keycapDefaults.test.ts
+ *  -- Node's test environment has no real one. */
+function installFakeLocalStorage(): void {
+  const store = new Map<string, string>();
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, value),
+    removeItem: (key: string) => void store.delete(key),
+    clear: () => store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  } as Storage;
+}
 
 function resetStore() {
   useEditorStore.setState({
@@ -23,6 +41,8 @@ function resetStore() {
 
 beforeEach(() => {
   resetStore();
+  installFakeLocalStorage();
+  clearSavedDefaultParams();
 });
 
 describe("M4 addKeycapNode", () => {
@@ -58,6 +78,27 @@ describe("M4 addKeycapNode", () => {
     const id = await useEditorStore.getState().addKeycapNode();
     const node = useEditorStore.getState().project.nodes[id];
     expect(node.designTransform.position).toEqual([0, 0, 0]);
+  });
+
+  it("with no paramsOverride, uses the user's saved default params instead of the hardcoded ones", async () => {
+    saveDefaultParams({ ...DEFAULT_KEYCAP_PARAMS, socketDepthMm: 8.25, ribHeightMm: 6 });
+    const id = await useEditorStore.getState().addKeycapNode();
+    const node = useEditorStore.getState().project.nodes[id];
+    expect(node.parametric?.params.socketDepthMm).toBeCloseTo(8.25, 6);
+    expect(node.parametric?.params.ribHeightMm).toBeCloseTo(6, 6);
+  });
+
+  it("an explicit paramsOverride takes precedence over the saved default (e.g. batch-create cloning a specific keycap's params)", async () => {
+    saveDefaultParams({ ...DEFAULT_KEYCAP_PARAMS, socketDepthMm: 8.25 });
+    const id = await useEditorStore.getState().addKeycapNode({ socketDepthMm: 5 });
+    const node = useEditorStore.getState().project.nodes[id];
+    expect(node.parametric?.params.socketDepthMm).toBeCloseTo(5, 6);
+  });
+
+  it("falls back to the hardcoded default when nothing has been saved", async () => {
+    const id = await useEditorStore.getState().addKeycapNode();
+    const node = useEditorStore.getState().project.nodes[id];
+    expect(node.parametric?.params.socketDepthMm).toBeCloseTo(DEFAULT_KEYCAP_PARAMS.socketDepthMm, 6);
   });
 
   it("Add Keycap is one undo step", async () => {

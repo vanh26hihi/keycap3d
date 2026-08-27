@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { DEFAULT_KEYCAP_PARAMS, maxFlushSocketDepthMm, type KeycapParams } from "@keycap-web/geometry-core/keycap";
 import { ICON_OPTIONS } from "@keycap-web/geometry-core/icons";
 import { useEditorStore } from "../state/store";
+import { loadSavedDefaultParams, saveDefaultParams } from "../lib/keycapDefaults";
 
 function NumberField({
   fieldKey,
@@ -267,6 +268,14 @@ function IconGrid({ value, onSelect }: { value: string; onSelect: (char: string)
   );
 }
 
+/** Typical FDM bed width, mm (Bambu/Prusa-class printers) -- used only to
+ *  decide when the Legend field's batch-create-per-word flow should wrap
+ *  into a new row instead of laying keycaps out in one ever-longer line.
+ *  Not a real per-printer setting (this app has no bed-size concept yet),
+ *  just a reasonable wrap point so a long phrase doesn't produce keycaps
+ *  spaced 500mm out from the origin. */
+const BED_WIDTH_MM = 220;
+
 const SELECT_STYLE = {
   background: "#14171a",
   border: "1px solid #3a3f47",
@@ -319,9 +328,18 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
     commit({ legendText: words[0] });
     const gapMm = 2;
     const basePosition = nodePosition ?? [0, 0, 0];
+    // Wraps into rows once a row would run wider than a typical FDM bed
+    // (220mm -- Bambu/Prusa-class printers) instead of laying every word
+    // out in one ever-longer line, the same way you'd actually arrange
+    // separate parts on a real print bed.
+    const maxPerRow = Math.max(1, Math.floor(BED_WIDTH_MM / (params.widthMm + gapMm)));
     words.slice(1).forEach((word, i) => {
-      const offsetX = (params.widthMm + gapMm) * (i + 1);
-      void addKeycapNode({ ...params, legendText: word }, [basePosition[0] + offsetX, basePosition[1], basePosition[2]]);
+      const index = i + 1; // index 0 is the original keycap, left where it is
+      const col = index % maxPerRow;
+      const row = Math.floor(index / maxPerRow);
+      const offsetX = (params.widthMm + gapMm) * col;
+      const offsetY = (params.lengthMm + gapMm) * row;
+      void addKeycapNode({ ...params, legendText: word }, [basePosition[0] + offsetX, basePosition[1] + offsetY, basePosition[2]]);
     });
   };
 
@@ -331,15 +349,26 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
         <div className="transform-group-label" style={{ marginBottom: 0 }}>
           Thông số keycap (mm)
         </div>
-        <button
-          type="button"
-          className="toolbar-btn"
-          data-testid="keycap-reset-btn"
-          title="Đặt lại toàn bộ thông số keycap này về mặc định"
-          onClick={() => commit(DEFAULT_KEYCAP_PARAMS)}
-        >
-          Đặt lại mặc định
-        </button>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            className="toolbar-btn"
+            data-testid="keycap-save-default-btn"
+            title="Lưu toàn bộ thông số hiện tại làm mặc định cho lần sau -- áp dụng khi bấm + Keycap hoặc mở lại trang, không cần chỉnh lại từ đầu"
+            onClick={() => saveDefaultParams(params)}
+          >
+            Lưu làm mặc định
+          </button>
+          <button
+            type="button"
+            className="toolbar-btn"
+            data-testid="keycap-reset-btn"
+            title="Đặt lại về thông số mặc định đã lưu (hoặc mặc định gốc nếu chưa lưu gì)"
+            onClick={() => commit(loadSavedDefaultParams() ?? DEFAULT_KEYCAP_PARAMS)}
+          >
+            Đặt lại mặc định
+          </button>
+        </div>
       </div>
 
       <div className="transform-row" style={{ marginBottom: 6 }}>
