@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createKeycapMesh, resolveKeycapParams, DEFAULT_KEYCAP_PARAMS, type KeycapParams } from "../src/generators/keycap.js";
+import { createKeycapMesh, createKeycapMeshParts, resolveKeycapParams, DEFAULT_KEYCAP_PARAMS, type KeycapParams } from "../src/generators/keycap.js";
 import { roundedRectProfile } from "../src/primitives/roundedRect.js";
 import { loftProfiles } from "../src/generators/loft.js";
 import { createCylinderMesh } from "../src/primitives/cylinder.js";
@@ -855,5 +855,69 @@ describe("createKeycapMesh: legendBubble (speech-bubble plaque behind the legend
     // legend's own peak.
     const mesh = await createKeycapMesh({ legendText: "A", legendMode: "emboss", legendBubble: true, legendReliefMm: 1.5 });
     expect(validateMesh(mesh).isWatertight).toBe(true);
+  });
+});
+
+describe("createKeycapMeshParts: multi-color export (base/bubble/legend as separate objects)", () => {
+  it("with no legend requested, returns only base -- identical to createKeycapMesh's own result", async () => {
+    const whole = await createKeycapMesh({});
+    const parts = await createKeycapMeshParts({});
+    expect(parts.bubble).toBeNull();
+    expect(parts.legend).toBeNull();
+    expect(computeSignedVolume(parts.base)).toBeCloseTo(computeSignedVolume(whole), 6);
+  });
+
+  it("with an emboss legend and no bubble, splits into base + legend (no bubble)", async () => {
+    const parts = await createKeycapMeshParts({ legendText: "A", legendMode: "emboss" });
+    expect(parts.bubble).toBeNull();
+    expect(parts.legend).not.toBeNull();
+    expect(validateMesh(parts.base).isWatertight).toBe(true);
+    expect(validateMesh(parts.legend!).isWatertight).toBe(true);
+    // Each part is real, non-degenerate material.
+    expect(computeSignedVolume(parts.legend!)).toBeGreaterThan(0);
+  });
+
+  it("with an emboss legend AND a bubble, splits into 3 separate parts", async () => {
+    const parts = await createKeycapMeshParts({ legendText: "A", legendMode: "emboss", legendBubble: true });
+    expect(parts.bubble).not.toBeNull();
+    expect(parts.legend).not.toBeNull();
+    expect(validateMesh(parts.base).isWatertight).toBe(true);
+    expect(validateMesh(parts.bubble!).isWatertight).toBe(true);
+    expect(validateMesh(parts.legend!).isWatertight).toBe(true);
+  });
+
+  it("with an ENGRAVE legend, both the legend AND its bubble background fold into base -- neither is a separate part", async () => {
+    // A cut can't be its own separate printable object, and cutting into a
+    // SEPARATE bubble part while leaving base untouched would just leave a
+    // hole in one part with nothing sensible behind it -- simplest correct
+    // behavior is folding the whole raised-plaque-plus-engraved-hole
+    // combination into base as one object when the legend is engraved.
+    const parts = await createKeycapMeshParts({ legendText: "A", legendMode: "engrave", legendBubble: true });
+    expect(parts.legend).toBeNull();
+    expect(parts.bubble).toBeNull();
+    expect(validateMesh(parts.base).isWatertight).toBe(true);
+    // The bubble + engrave cut are still really present in base, not
+    // silently dropped -- volume differs from a plain no-legend keycap.
+    const plainBase = await createKeycapMesh({});
+    expect(computeSignedVolume(parts.base)).not.toBeCloseTo(computeSignedVolume(plainBase), 1);
+  });
+
+  it("reassembling the parts (union base+bubble+legend) reproduces the same single-mesh result createKeycapMesh returns", async () => {
+    const paramsInput = { legendText: "A", legendMode: "emboss" as const, legendBubble: true };
+    const whole = await createKeycapMesh(paramsInput);
+    const parts = await createKeycapMeshParts(paramsInput);
+    const engine = await createBooleanEngine();
+    let reassembled = parts.base;
+    if (parts.bubble) reassembled = engine.union(reassembled, parts.bubble);
+    if (parts.legend) reassembled = engine.union(reassembled, parts.legend);
+    expect(validateMesh(reassembled).isWatertight).toBe(true);
+    expect(computeSignedVolume(reassembled)).toBeCloseTo(computeSignedVolume(whole), 3);
+  });
+
+  it("works with an icon legend too", async () => {
+    const parts = await createKeycapMeshParts({ legendText: "⭐", legendKind: "icon", legendMode: "emboss", legendBubble: true });
+    expect(parts.bubble).not.toBeNull();
+    expect(parts.legend).not.toBeNull();
+    expect(validateMesh(parts.legend!).isWatertight).toBe(true);
   });
 });

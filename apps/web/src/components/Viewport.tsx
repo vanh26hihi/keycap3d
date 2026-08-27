@@ -98,10 +98,26 @@ function SceneNodeMesh({ id }: { id: string }) {
         }}
       >
         <mesh geometry={geometry}>
+          {/* flatShading: this is CAD/mechanical geometry -- sharp edges
+              everywhere (letter/icon relief, boss walls, keycap bevels),
+              not an organic smooth-curved model. Without it,
+              meshBufferToBufferGeometry's fallback computeVertexNormals()
+              averages face normals across every SHARED vertex, including
+              ones that sit on a genuine hard edge between two very
+              differently-angled faces (e.g. a glyph's flat top meeting its
+              vertical side wall) -- producing garbage blended normals that
+              render as a jagged/crumpled mess under lighting, especially
+              visible on small sharp-cornered features like embossed
+              letters. flatShading derives each triangle's normal directly
+              in the fragment shader instead, matching how any slicer
+              (which only ever reads face-derived normals from an STL,
+              never vertex normals) already renders the exact same mesh
+              correctly. */}
           <meshStandardMaterial
             color={node.color}
             emissive={isSelected ? "#3a5a8c" : "#000000"}
             emissiveIntensity={isSelected ? 0.35 : 0}
+            flatShading
           />
         </mesh>
       </group>

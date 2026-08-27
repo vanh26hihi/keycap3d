@@ -502,22 +502,44 @@ function buildBubbleMesh(engine: BooleanEngine, topWidthMm: number, topLengthMm:
   return engine.union(body, tail);
 }
 
-function applyLegend(engine: BooleanEngine, mesh: MeshBuffer, params: KeycapParams, topWidthMm: number, topLengthMm: number): MeshBuffer {
+interface LegendParts {
+  /** The bubble plaque, if legendBubble is on -- always additive material,
+   *  independent of legendMode (a background is always raised even when
+   *  the legend on top of it is engraved). */
+  bubbleMesh: MeshBuffer | null;
+  /** Null if there's nothing to draw (blank text, or every character
+   *  unsupported by the embedded font) -- see buildLegendMesh. */
+  legendMesh: MeshBuffer | null;
+  legendMode: "emboss" | "engrave" | "none";
+}
+
+/**
+ * Computes the bubble/legend meshes WITHOUT applying them to any base mesh
+ * -- shared by `applyLegend` (single-mesh path: unions/subtracts these
+ * into the keycap directly) and `createKeycapMeshParts` (multi-part path:
+ * keeps them as separate objects). Keeping this pure (no boolean ops
+ * against a base mesh) is what lets the multi-part path decide per-part
+ * whether to fold something into `base` (engrave always does, since a
+ * cut can't be its own separate object) or keep it standalone (emboss).
+ */
+function buildLegendParts(engine: BooleanEngine, params: KeycapParams, topWidthMm: number, topLengthMm: number): LegendParts {
   const text = params.legendText.trim();
-  if (!text || params.legendMode === "none") return mesh;
+  if (!text || params.legendMode === "none") {
+    return { bubbleMesh: null, legendMesh: null, legendMode: "none" };
+  }
 
   // The bubble plaque, when enabled, raises the "surface" the legend itself
   // renders relative to -- everything below (emboss embed depth, engrave
   // roof budget) shifts up by exactly the plaque's own relief so the legend
   // sits on/into the plaque's raised face, not the bare keycap top.
   let legendSurfaceZ = params.heightMm;
+  let bubbleMesh: MeshBuffer | null = null;
   if (params.legendBubble) {
     // Always at least a little shallower than the legend's own relief (a
     // background reads as a background), but never so tall it starts
     // approaching the legend's minimum relief setting.
     const bubbleReliefMm = Math.min(BUBBLE_RELIEF_MM, Math.max(params.legendReliefMm - 0.05, 0.1));
-    const bubbleMesh = buildBubbleMesh(engine, topWidthMm, topLengthMm, params.heightMm - EMBOSS_EMBED_MM, params.heightMm + bubbleReliefMm);
-    mesh = engine.union(mesh, bubbleMesh);
+    bubbleMesh = buildBubbleMesh(engine, topWidthMm, topLengthMm, params.heightMm - EMBOSS_EMBED_MM, params.heightMm + bubbleReliefMm);
     legendSurfaceZ = params.heightMm + bubbleReliefMm;
   }
 
@@ -532,8 +554,7 @@ function applyLegend(engine: BooleanEngine, mesh: MeshBuffer, params: KeycapPara
       params.legendAlign,
       params.legendKind,
     );
-    if (!legendMesh) return mesh;
-    return engine.union(mesh, legendMesh);
+    return { bubbleMesh, legendMesh, legendMode: "emboss" };
   }
 
   // engrave -- the extra budget from the plaque's own thickness (if any)
@@ -550,8 +571,14 @@ function applyLegend(engine: BooleanEngine, mesh: MeshBuffer, params: KeycapPara
     params.legendAlign,
     params.legendKind,
   );
+  return { bubbleMesh, legendMesh, legendMode: "engrave" };
+}
+
+function applyLegend(engine: BooleanEngine, mesh: MeshBuffer, params: KeycapParams, topWidthMm: number, topLengthMm: number): MeshBuffer {
+  const { bubbleMesh, legendMesh, legendMode } = buildLegendParts(engine, params, topWidthMm, topLengthMm);
+  if (bubbleMesh) mesh = engine.union(mesh, bubbleMesh);
   if (!legendMesh) return mesh;
-  return engine.subtract(mesh, legendMesh);
+  return legendMode === "emboss" ? engine.union(mesh, legendMesh) : engine.subtract(mesh, legendMesh);
 }
 
 /**
@@ -601,8 +628,27 @@ function applyLegend(engine: BooleanEngine, mesh: MeshBuffer, params: KeycapPara
  * without ever touching the Boolean Engine (still async, for a uniform call
  * signature, but resolves synchronously-fast).
  */
-export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}): Promise<MeshBuffer> {
-  const params: KeycapParams = resolveKeycapParams(paramsInput);
+interface KeycapBase {
+  mesh: MeshBuffer;
+  /** Non-null exactly when legendRequested is true (see the fast-path
+   *  early-return below) -- callers that need to build a bubble/legend on
+   *  top of this base can rely on that invariant instead of null-checking
+   *  defensively at every use. */
+  engine: BooleanEngine | null;
+  topWidth: number;
+  topLength: number;
+  legendRequested: boolean;
+}
+
+/**
+ * Builds the shell + cavity + boss/socket/ribs -- everything about a
+ * keycap EXCEPT the legend and its optional bubble background. Shared by
+ * `createKeycapMesh` (which unions/subtracts the legend directly into this
+ * base for a single printable solid) and `createKeycapMeshParts` (which
+ * keeps the legend/bubble as separate objects for multi-color export) so
+ * the two never drift out of sync on the actual shell geometry.
+ */
+async function buildKeycapBase(params: KeycapParams): Promise<KeycapBase> {
 
   const topWidth = Math.max(params.widthMm - 2 * params.topInsetMm, 1);
   const topLength = Math.max(params.lengthMm - 2 * params.topInsetMm, 1);
@@ -622,7 +668,7 @@ export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}):
   const legendRequested = params.legendMode !== "none" && params.legendText.trim().length > 0;
 
   if (params.wallThicknessMm <= 0 && !legendRequested) {
-    return outerShell;
+    return { mesh: outerShell, engine: null, topWidth, topLength, legendRequested };
   }
 
   const engine = await createBooleanEngine();
@@ -775,9 +821,59 @@ export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}):
     }
   }
 
-  if (legendRequested) {
-    mesh = applyLegend(engine, mesh, params, topWidth, topLength);
+  return { mesh, engine, topWidth, topLength, legendRequested };
+}
+
+/**
+ * Builds a full parametric keycap as ONE printable solid: the shell,
+ * boss/socket/ribs, and (if requested) the legend's bubble background and
+ * the legend itself, all unioned/subtracted into a single mesh.
+ */
+export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}): Promise<MeshBuffer> {
+  const params: KeycapParams = resolveKeycapParams(paramsInput);
+  const base = await buildKeycapBase(params);
+  if (!base.legendRequested) return base.mesh;
+  // engine is guaranteed non-null here: the fast path above only skips it
+  // when !legendRequested.
+  return applyLegend(base.engine!, base.mesh, params, base.topWidth, base.topLength);
+}
+
+/**
+ * Builds the SAME keycap as `createKeycapMesh`, but keeps the legend's
+ * bubble background and the legend itself as separate objects instead of
+ * unioning them into one solid -- for exporting a multi-color 3MF where
+ * each part gets its own filament/AMS slot in the slicer. Only meaningful
+ * for an EMBOSS legend: an engraved legend is a hole cut into whatever
+ * surface it sits on, not a separate volume of material, so FDM multi-color
+ * printing can't target it independently. When legendMode is "engrave",
+ * BOTH the legend cut and its bubble background (if any) fold into `base`
+ * as one object, exactly as in the single-mesh path -- a cut can't be its
+ * own printable object, and leaving the bubble as a separate part with an
+ * unrelated hole in it (while `base` underneath stays untouched) wouldn't
+ * correspond to anything printable either.
+ */
+export async function createKeycapMeshParts(
+  paramsInput: Partial<KeycapParams> = {},
+): Promise<{ base: MeshBuffer; bubble: MeshBuffer | null; legend: MeshBuffer | null }> {
+  const params: KeycapParams = resolveKeycapParams(paramsInput);
+  const built = await buildKeycapBase(params);
+  if (!built.legendRequested) {
+    return { base: built.mesh, bubble: null, legend: null };
+  }
+  const engine = built.engine!;
+  const { bubbleMesh, legendMesh, legendMode } = buildLegendParts(engine, params, built.topWidth, built.topLength);
+
+  let base = built.mesh;
+  let bubble: MeshBuffer | null = null;
+  let legend: MeshBuffer | null = null;
+
+  if (legendMode === "engrave") {
+    if (bubbleMesh) base = engine.union(base, bubbleMesh);
+    if (legendMesh) base = engine.subtract(base, legendMesh);
+  } else {
+    bubble = bubbleMesh;
+    legend = legendMesh;
   }
 
-  return mesh;
+  return { base, bubble, legend };
 }

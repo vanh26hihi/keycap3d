@@ -3,6 +3,7 @@ export * from "./mesh";
 export * from "./transform";
 export * from "./validate";
 export * from "./stl";
+export * from "./threemf";
 export * from "./convert/three";
 export * from "./primitives/cube";
 export * from "./primitives/cylinder";

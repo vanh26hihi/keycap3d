@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { createCubeMesh, createCylinderMesh } from "@keycap-web/geometry-core";
 import { useEditorStore, type TransformMode } from "../state/store";
-import { downloadBlob, exportNodeToSTLBlob, importSTLFile } from "../lib/importExport";
+import { downloadBlob, exportKeycapMultiPart3MFBlob, exportNodeToSTLBlob, importSTLFile } from "../lib/importExport";
 
 const MODES: { mode: TransformMode; label: string; key: string }[] = [
   { mode: "translate", label: "Di chuyển", key: "1" },
@@ -29,6 +29,7 @@ export function Toolbar() {
   const keycapStatus = useEditorStore((s) => s.keycapStatus);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [exporting3mf, setExporting3mf] = useState(false);
 
   const handleImportClick = () => fileInputRef.current?.click();
 
@@ -50,6 +51,22 @@ export function Toolbar() {
     if (!node) return;
     const blob = exportNodeToSTLBlob(node);
     downloadBlob(blob, `${node.name || "part"}.stl`);
+  };
+
+  const selectedNode = selectedId ? nodes[selectedId] : null;
+  const canExport3mf = !!selectedNode?.parametric;
+
+  const handleExport3mf = async () => {
+    if (!selectedNode?.parametric) return;
+    setExporting3mf(true);
+    try {
+      const blob = await exportKeycapMultiPart3MFBlob(selectedNode);
+      downloadBlob(blob, `${selectedNode.name || "keycap"}.3mf`);
+    } catch (err) {
+      window.alert(`Xuất 3MF thất bại: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExporting3mf(false);
+    }
   };
 
   return (
@@ -138,6 +155,16 @@ export function Toolbar() {
           data-testid="export-btn"
         >
           Xuất STL
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn"
+          disabled={!canExport3mf || splitActive || exporting3mf}
+          onClick={() => void handleExport3mf()}
+          data-testid="export-3mf-btn"
+          title="Xuất 3MF nhiều object (vỏ / nền bong bóng chat / chữ-icon) để gán màu khác nhau trong Bambu Studio -- chỉ áp dụng cho keycap"
+        >
+          {exporting3mf ? "Đang xuất…" : "Xuất 3MF đa màu"}
         </button>
       </div>
 
