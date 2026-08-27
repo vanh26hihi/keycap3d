@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { GizmoHelper, GizmoViewport, OrbitControls, TransformControls } from "@react-three/drei";
-import { BufferGeometry, DoubleSide, Float32BufferAttribute, Matrix4, PlaneGeometry, type Group } from "three";
-import { meshBufferToBufferGeometry, transformToMatrix4, matrix4ToTransform, type Transform } from "@keycap-web/geometry-core";
+import { BufferGeometry, DoubleSide, Float32BufferAttribute, Matrix4, PlaneGeometry, Vector3, type Group } from "three";
+import {
+  meshBufferToBufferGeometry,
+  transformToMatrix4,
+  matrix4ToTransform,
+  computeBoundingBox,
+  type Transform,
+} from "@keycap-web/geometry-core";
 import { useEditorStore } from "../state/store";
 import { PRINT_BED_WIDTH_MM, PRINT_BED_DEPTH_MM } from "../lib/printBed";
 
@@ -249,6 +255,147 @@ function MultiSelectGizmo() {
   );
 }
 
+export interface MarqueeRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * Drag-select (marquee): Shift+left-drag on empty canvas space draws a
+ * screen-space rectangle; every visible node whose world-space bounding box
+ * overlaps that rectangle (once projected to screen space via the current
+ * camera) gets selected on release. Runs as a component INSIDE <Canvas> so
+ * it can read the live camera/renderer-size via useThree(), but the visible
+ * rectangle overlay itself is plain DOM (R3F only renders three.js objects
+ * inside the canvas) -- so this component only tracks pointer state and
+ * hands the current rect up to the parent Viewport via `onRectChange`,
+ * which owns the actual overlay <div>.
+ *
+ * Listens on `gl.domElement` (the real <canvas> DOM node) directly with
+ * native addEventListener rather than React's onPointerDown/etc props,
+ * because OrbitControls attaches its own native listeners to that same
+ * element -- disabling `controlsRef.current.enabled` for the duration of
+ * the drag (rather than e.g. stopPropagation) is what actually prevents
+ * OrbitControls from also rotating the camera on the same drag.
+ */
+function MarqueeSelect({
+  controlsRef,
+  onRectChange,
+}: {
+  controlsRef: React.RefObject<{ enabled: boolean } | null>;
+  onRectChange: (rect: MarqueeRect | null) => void;
+}) {
+  const { camera, gl, size } = useThree();
+  const nodes = useEditorStore((s) => s.project.nodes);
+  const order = useEditorStore((s) => s.project.order);
+  const selectMany = useEditorStore((s) => s.selectMany);
+  const dragging = useRef<MarqueeRect | null>(null);
+
+  useEffect(() => {
+    const dom = gl.domElement;
+
+    const toLocal = (e: PointerEvent) => {
+      const r = dom.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!e.shiftKey || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const p = toLocal(e);
+      const rect: MarqueeRect = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+      dragging.current = rect;
+      if (controlsRef.current) controlsRef.current.enabled = false;
+      onRectChange(rect);
+      dom.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const p = toLocal(e);
+      const rect = { ...dragging.current, x1: p.x, y1: p.y };
+      dragging.current = rect;
+      onRectChange(rect);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      const rect = dragging.current;
+      if (!rect) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragging.current = null;
+      if (controlsRef.current) controlsRef.current.enabled = true;
+      onRectChange(null);
+
+      const minX = Math.min(rect.x0, rect.x1);
+      const maxX = Math.max(rect.x0, rect.x1);
+      const minY = Math.min(rect.y0, rect.y1);
+      const maxY = Math.max(rect.y0, rect.y1);
+      // Ignore an effectively-stationary click (Shift+click with no real
+      // drag) -- treating a 0x0 rect as a valid marquee would clear the
+      // selection on every plain shift-click of empty space.
+      if (maxX - minX < 3 && maxY - minY < 3) return;
+
+      const hitIds: string[] = [];
+      for (const id of order) {
+        const node = nodes[id];
+        if (!node || !node.visible) continue;
+        const box = computeBoundingBox(node.mesh);
+        const matrix = transformToMatrix4(node.designTransform);
+        const corners = [
+          [box.min[0], box.min[1], box.min[2]],
+          [box.max[0], box.min[1], box.min[2]],
+          [box.min[0], box.max[1], box.min[2]],
+          [box.max[0], box.max[1], box.min[2]],
+          [box.min[0], box.min[1], box.max[2]],
+          [box.max[0], box.min[1], box.max[2]],
+          [box.min[0], box.max[1], box.max[2]],
+          [box.max[0], box.max[1], box.max[2]],
+        ] as const;
+
+        let objMinX = Infinity;
+        let objMaxX = -Infinity;
+        let objMinY = Infinity;
+        let objMaxY = -Infinity;
+        for (const [cx, cy, cz] of corners) {
+          const v = new Vector3(cx, cy, cz).applyMatrix4(matrix).project(camera);
+          const sx = (v.x * 0.5 + 0.5) * size.width;
+          const sy = (1 - (v.y * 0.5 + 0.5)) * size.height;
+          objMinX = Math.min(objMinX, sx);
+          objMaxX = Math.max(objMaxX, sx);
+          objMinY = Math.min(objMinY, sy);
+          objMaxY = Math.max(objMaxY, sy);
+        }
+
+        const overlaps = objMinX <= maxX && objMaxX >= minX && objMinY <= maxY && objMaxY >= minY;
+        if (overlaps) hitIds.push(id);
+      }
+      selectMany(hitIds);
+    };
+
+    // capture: true -- both OrbitControls and R3F's own synthetic pointer
+    // system attach their listeners on this same <canvas> element in the
+    // bubble phase. Registering ours on the capture phase guarantees we see
+    // (and can stopPropagation on) the event first, so a Shift+drag never
+    // also rotates the camera or fires a node's onClick underneath it.
+    dom.addEventListener("pointerdown", onPointerDown, { capture: true });
+    dom.addEventListener("pointermove", onPointerMove, { capture: true });
+    dom.addEventListener("pointerup", onPointerUp, { capture: true });
+    return () => {
+      dom.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      dom.removeEventListener("pointermove", onPointerMove, { capture: true });
+      dom.removeEventListener("pointerup", onPointerUp, { capture: true });
+    };
+  }, [gl, camera, size, nodes, order, selectMany, controlsRef, onRectChange]);
+
+  return null;
+}
+
 /**
  * The M3 plane-split cutting plane: a semi-transparent double-sided
  * rectangle the user can move/rotate to choose where the model gets cut,
@@ -358,8 +505,11 @@ function BedPlate() {
 export function Viewport() {
   const order = useEditorStore((s) => s.project.order);
   const select = useEditorStore((s) => s.select);
+  const controlsRef = useRef<{ enabled: boolean } | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
 
   return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
     <Canvas
       // up: [0,0,1] -- the whole app's geometry convention is Z-up (STL/3D-printing
       // standard: Z is height, XY is the print bed plane), but three.js's own
@@ -397,18 +547,36 @@ export function Viewport() {
 
       <SplitPlaneGizmo />
       <MultiSelectGizmo />
+      <MarqueeSelect controlsRef={controlsRef} onRectChange={setMarqueeRect} />
 
       {/*
         makeDefault registers this as `state.controls` -- drei's
         TransformControls automatically disables it while dragging via a
         `dragging-changed` listener on the underlying three-stdlib controls
         instance (see node_modules/@react-three/drei/core/TransformControls.js),
-        so no manual orbit-disable wiring is needed here.
+        so no manual orbit-disable wiring is needed here. Also disabled while
+        MarqueeSelect is drag-selecting, via the same `controlsRef`.
       */}
-      <OrbitControls makeDefault />
+      <OrbitControls ref={(instance) => { controlsRef.current = instance; }} makeDefault />
       <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
         <GizmoViewport axisColors={["#e0776a", "#7fb8ab", "#5b8dee"]} labelColor="#1b1e22" />
       </GizmoHelper>
     </Canvas>
+    {marqueeRect && (
+      <div
+        data-testid="marquee-rect"
+        style={{
+          position: "absolute",
+          left: Math.min(marqueeRect.x0, marqueeRect.x1),
+          top: Math.min(marqueeRect.y0, marqueeRect.y1),
+          width: Math.abs(marqueeRect.x1 - marqueeRect.x0),
+          height: Math.abs(marqueeRect.y1 - marqueeRect.y0),
+          border: "1px solid #5b8dee",
+          background: "rgba(91, 141, 238, 0.15)",
+          pointerEvents: "none",
+        }}
+      />
+    )}
+    </div>
   );
 }

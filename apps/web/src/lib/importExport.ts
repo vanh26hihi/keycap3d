@@ -1,16 +1,18 @@
 import {
   exportNodeAsSTL,
+  exportSTLBinary,
   importSTL,
   checkImportScaleSanity,
   computeBoundingBox,
   boundingBoxMaxDimension,
   composeExportMatrix,
   applyMatrixToMesh,
+  mergeMeshes,
   exportMultiPart3MF,
   type ThreeMFPart,
 } from "@keycap-web/geometry-core";
 import { createKeycapMeshParts } from "@keycap-web/geometry-core/keycap";
-import type { SceneNodeState } from "../state/types";
+import type { ProjectState, SceneNodeState } from "../state/types";
 
 export interface ImportResult {
   mesh: ReturnType<typeof importSTL>;
@@ -53,6 +55,29 @@ export async function exportKeycapMultiPart3MFBlob(node: SceneNodeState): Promis
 
   const bytes = exportMultiPart3MF(parts);
   return new Blob([bytes as BlobPart], { type: "model/3mf" });
+}
+
+/**
+ * Exports every VISIBLE node in the scene as ONE combined STL -- "print
+ * the whole bed at once" rather than the per-object Export STL button,
+ * which only ever exports whichever single node is currently selected.
+ * Each node's own designTransform/printTransform is baked into its mesh
+ * (same as the single-node export) before merging, so the file's raw
+ * triangle coordinates already reflect each object's real position on the
+ * bed -- a slicer opening it sees everything laid out exactly as it is in
+ * this app's own viewport, no manual repositioning needed.
+ */
+export function exportAllToSTLBlob(project: ProjectState): Blob {
+  const bakedMeshes = project.order
+    .map((id) => project.nodes[id])
+    .filter((node): node is SceneNodeState => !!node && node.visible)
+    .map((node) => {
+      const matrix = composeExportMatrix(node.designTransform, node.printTransform ?? null);
+      return applyMatrixToMesh(node.mesh, matrix);
+    });
+  const merged = mergeMeshes(bakedMeshes);
+  const buffer = exportSTLBinary(merged, "keycap-bed");
+  return new Blob([buffer], { type: "model/stl" });
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

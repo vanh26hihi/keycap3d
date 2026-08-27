@@ -280,6 +280,44 @@ describe("multi-select: selectedIds / toggleSelect", () => {
     expect(useEditorStore.getState().selectedIds).toEqual([b]);
     expect(useEditorStore.getState().selectedId).toBe(b); // unaffected, a wasn't primary
   });
+
+  it("selectAll selects every node in the scene, in scene-tree order", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    const c = store.addMeshNode(createCubeMesh(10, 10, 10), "C");
+    useEditorStore.getState().select(null);
+
+    useEditorStore.getState().selectAll();
+    expect(useEditorStore.getState().selectedIds).toEqual([a, b, c]);
+    expect(useEditorStore.getState().selectedId).toBe(c);
+  });
+
+  it("selectAll on an empty scene selects nothing (no crash)", () => {
+    useEditorStore.getState().selectAll();
+    expect(useEditorStore.getState().selectedIds).toEqual([]);
+    expect(useEditorStore.getState().selectedId).toBeNull();
+  });
+
+  it("selectMany replaces the whole selection with exactly the given ids", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    store.addMeshNode(createCubeMesh(10, 10, 10), "C"); // not selected
+
+    useEditorStore.getState().selectMany([a, b]);
+    expect(useEditorStore.getState().selectedIds).toEqual([a, b]);
+    expect(useEditorStore.getState().selectedId).toBe(b);
+  });
+
+  it("selectMany([]) clears the selection", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    useEditorStore.getState().selectMany([a]);
+    useEditorStore.getState().selectMany([]);
+    expect(useEditorStore.getState().selectedIds).toEqual([]);
+    expect(useEditorStore.getState().selectedId).toBeNull();
+  });
 });
 
 describe("commitBatchTransform: multi-select group move", () => {

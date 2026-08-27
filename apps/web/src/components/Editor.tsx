@@ -16,6 +16,7 @@ export function Editor() {
   const duplicateNode = useEditorStore((s) => s.duplicateNode);
   const removeNode = useEditorStore((s) => s.removeNode);
   const selectedId = useEditorStore((s) => s.selectedId);
+  const selectAll = useEditorStore((s) => s.selectAll);
   const splitActive = useEditorStore((s) => s.splitSession !== null);
   const cancelSplit = useEditorStore((s) => s.cancelSplit);
 
@@ -51,6 +52,11 @@ export function Editor() {
         if (selectedId) duplicateNode(selectedId);
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedId) {
           e.preventDefault();
@@ -64,7 +70,7 @@ export function Editor() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, setTransformMode, duplicateNode, removeNode, selectedId, splitActive, cancelSplit]);
+  }, [undo, redo, setTransformMode, duplicateNode, removeNode, selectedId, selectAll, splitActive, cancelSplit]);
 
   return (
     <div className="editor-shell">

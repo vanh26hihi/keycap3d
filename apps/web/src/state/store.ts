@@ -112,6 +112,13 @@ export interface EditorStore {
    *  node becomes the new `selectedId` (primary); removing the primary
    *  falls back to whatever's left in `selectedIds`, or null if none. */
   toggleSelect(id: string): void;
+  /** Ctrl/Cmd+A: selects every node currently in the scene. */
+  selectAll(): void;
+  /** Marquee/box-select: replaces the whole selection with exactly this
+   *  set of ids (order preserved from `ids`, last one becomes the new
+   *  primary `selectedId`) -- used by the viewport's drag-rectangle select
+   *  instead of toggling one at a time. */
+  selectMany(ids: string[]): void;
   setTransformMode(mode: TransformMode): void;
   setDraggingNode(id: string | null): void;
   setDraggingGroup(ids: string[]): void;
@@ -234,6 +241,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const selectedId = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
       return { selectedIds, selectedId };
     });
+  },
+
+  selectAll() {
+    set((s) => {
+      const selectedIds = [...s.project.order];
+      const selectedId = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
+      return { selectedIds, selectedId };
+    });
+  },
+
+  selectMany(ids) {
+    set({ selectedIds: [...ids], selectedId: ids.length > 0 ? ids[ids.length - 1] : null });
   },
 
   setTransformMode(mode) {

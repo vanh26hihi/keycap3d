@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { createCubeMesh, createCylinderMesh } from "@keycap-web/geometry-core";
 import { DEFAULT_KEYCAP_PARAMS } from "@keycap-web/geometry-core/keycap";
 import { useEditorStore, type TransformMode } from "../state/store";
-import { downloadBlob, exportKeycapMultiPart3MFBlob, exportNodeToSTLBlob, importSTLFile } from "../lib/importExport";
+import { downloadBlob, exportAllToSTLBlob, exportKeycapMultiPart3MFBlob, exportNodeToSTLBlob, importSTLFile } from "../lib/importExport";
 import { loadSavedDefaultParams } from "../lib/keycapDefaults";
 import { findFreePosition, occupiedRectsForProject } from "../lib/placement";
 
@@ -62,6 +62,11 @@ export function Toolbar() {
     if (!node) return;
     const blob = exportNodeToSTLBlob(node);
     downloadBlob(blob, `${node.name || "part"}.stl`);
+  };
+
+  const handleExportAll = () => {
+    const blob = exportAllToSTLBlob(project);
+    downloadBlob(blob, "keycap-ban-in.stl");
   };
 
   const selectedNode = selectedId ? nodes[selectedId] : null;
@@ -166,6 +171,16 @@ export function Toolbar() {
           data-testid="export-btn"
         >
           Xuất STL
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn"
+          disabled={splitActive || project.order.length === 0}
+          onClick={handleExportAll}
+          data-testid="export-all-btn"
+          title="Xuất TẤT CẢ đối tượng đang hiện trong 1 file STL, đúng vị trí như trên bàn in"
+        >
+          Xuất tất cả (STL)
         </button>
         <button
           type="button"
