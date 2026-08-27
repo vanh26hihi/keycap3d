@@ -138,15 +138,18 @@ function musicNoteTest(): (u: number, v: number) => boolean {
   return unionTest(head, stem, flag);
 }
 
+/** Four separated round lobes around a small stem -- distinct notches
+ *  between lobes so it reads as a clover, not a single rounded blob (a
+ *  bigger radius/overlap here just merges into a diamond shape). */
 function cloverTest(): (u: number, v: number) => boolean {
-  const r = 0.42;
-  const d = 0.4;
+  const r = 0.32;
+  const d = 0.46;
   return unionTest(
     circleTest(0, d, r),
     circleTest(0, -d, r),
     circleTest(d, 0, r),
     circleTest(-d, 0, r),
-    circleTest(0, 0, 0.25),
+    circleTest(0, 0, 0.16),
   );
 }
 
@@ -174,11 +177,14 @@ function crossTest(): (u: number, v: number) => boolean {
   return unionTest(nearDiagonal(1), nearDiagonal(-1));
 }
 
+/** Just eyes + a mouth -- no surrounding face outline. The reference image
+ *  draws these directly inside the (separately-rendered) chat-bubble
+ *  background with no extra ring around the face itself; an outline circle
+ *  here was extra geometry the reference never has. */
 function faceTest(mouth: (u: number, v: number) => boolean): (u: number, v: number) => boolean {
-  const outline = outlineOf(circleTest(0, 0, 0.95), 0.75);
-  const eyeL = circleTest(-0.32, 0.25, 0.1);
-  const eyeR = circleTest(0.32, 0.25, 0.1);
-  return unionTest(outline, eyeL, eyeR, mouth);
+  const eyeL = circleTest(-0.32, 0.35, 0.11);
+  const eyeR = circleTest(0.32, 0.35, 0.11);
+  return unionTest(eyeL, eyeR, mouth);
 }
 
 /** A short upward-curving arc (the bottom rim of a circle centered above
