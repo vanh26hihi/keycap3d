@@ -8,6 +8,7 @@ import { loftProfiles } from "./loft";
 import { layoutLegendIslands, type LegendAlign } from "./legendLayout";
 import { getPixelIconGrid } from "./pixelIcons";
 import { pixelIconIslands } from "./pixelTrace";
+import { getIconFont } from "./iconFont";
 import { extrudeGlyphIsland } from "./glyphExtrude";
 import { createBooleanEngine, type BooleanEngine } from "../boolean";
 
@@ -463,9 +464,18 @@ function buildLegendMesh(
   const availableWidthMm = Math.max(topWidthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
   const availableLengthMm = Math.max(topLengthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
   if (kind === "icon") {
+    // Pixel-art icons (see icons.ts) are looked up by their own short id;
+    // the legacy emoji-font icon set stores a literal Unicode character
+    // instead, which never collides with a pixel-icon id, so trying the
+    // pixel lookup first and falling back to the emoji font is enough to
+    // support both sets through the same `legendText` field.
     const grid = getPixelIconGrid(text);
-    if (!grid) return null;
-    const { islands } = pixelIconIslands(grid, targetCapHeightMm, availableWidthMm, availableLengthMm);
+    if (grid) {
+      const { islands } = pixelIconIslands(grid, targetCapHeightMm, availableWidthMm, availableLengthMm);
+      if (islands.length === 0) return null;
+      return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
+    }
+    const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align, getIconFont());
     if (islands.length === 0) return null;
     return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
   }

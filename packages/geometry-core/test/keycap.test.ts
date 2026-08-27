@@ -762,7 +762,7 @@ describe("createKeycapMesh: legend (vector text on the top face)", () => {
   });
 });
 
-describe("createKeycapMesh: legendKind 'icon' (pixel-art legend via pixelIcons.ts)", () => {
+describe("createKeycapMesh: legendKind 'icon' (pixel-art icons plus the legacy emoji-font set)", () => {
   it("renders every curated icon, emboss and engrave, as print-safe geometry (no holes, no non-manifold edges)", async () => {
     // Checks openEdgeCount/nonManifoldEdgeCount rather than the stricter
     // isWatertight/isManifold (which also demands zero degenerate
@@ -771,11 +771,11 @@ describe("createKeycapMesh: legendKind 'icon' (pixel-art legend via pixelIcons.t
     // keycap shell occasionally emits a harmless zero-area sliver triangle
     // at a coincident-surface touch point. Confirmed this is a boolean-op
     // artifact, not a defect in the icon geometry itself: the SAME icon
-    // extruded standalone (see pixelIcons.test.ts, which does assert this
-    // same openEdge/nonManifold bar) is always clean; the sliver only
-    // appears after union with the shell. It creates no hole and no
-    // non-manifold edge, so a slicer silently discards it -- it doesn't
-    // affect printability.
+    // extruded standalone (see pixelIcons.test.ts/iconFont.test.ts, which
+    // do assert this same openEdge/nonManifold bar) is always clean; the
+    // sliver only appears after union with the shell. It creates no hole
+    // and no non-manifold edge, so a slicer silently discards it -- it
+    // doesn't affect printability.
     const { ICON_OPTIONS } = await import("../src/generators/icons.js");
     for (const icon of ICON_OPTIONS) {
       for (const legendMode of ["emboss", "engrave"] as const) {

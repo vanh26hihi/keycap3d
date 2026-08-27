@@ -126,7 +126,10 @@ export function signedArea2D(points: Array<[number, number]>): number {
   return area / 2;
 }
 
-function pointInPolygon(point: [number, number], polygon: Array<[number, number]>): boolean {
+/** Exported for pixelTrace.ts's own island-grouping (pixel-icon contours
+ *  need a different containment probe than glyph contours -- see
+ *  groupPixelContoursIntoIslands's doc comment there for why). */
+export function pointInPolygon(point: [number, number], polygon: Array<[number, number]>): boolean {
   const [px, py] = point;
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -166,49 +169,16 @@ export interface GlyphIsland {
  * hole (depth 2) becomes its own new island, with any odd-depth contours
  * immediately inside IT as its own holes, and so on.
  */
-/**
- * A point guaranteed to sit strictly inside `contour` (never exactly on its
- * boundary), close to its first edge -- used as the containment probe below
- * instead of either the contour's raw first vertex or its centroid. Why not
- * those two more obvious choices: the first vertex can sit exactly ON
- * another contour's boundary (e.g. two disjoint pixel-icon shapes that
- * happen to touch at a shared grid corner -- see pixelTrace.ts), which is an
- * ill-defined case for ray-casting point-in-polygon and was observed to
- * spuriously report "contained"; the centroid fails differently for a
- * RING/annulus shape (an outline icon's outer boundary and its concentric
- * hole share almost the same centroid, so the outer contour's own centroid
- * can land INSIDE the hole, misclassifying which one is the parent). A
- * point hugging the contour's own edge, nudged inward by a small amount, is
- * never on another shape's boundary and never drifts across into a
- * differently-centered concentric hole.
- */
-function interiorProbe(contour: Array<[number, number]>): [number, number] {
-  const [x0, y0] = contour[0];
-  const [x1, y1] = contour[1] ?? contour[0];
-  const mx = (x0 + x1) / 2;
-  const my = (y0 + y1) / 2;
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len;
-  const ny = dx / len;
-  const eps = Math.max(len * 0.25, 1e-4);
-  const candidateA: [number, number] = [mx + nx * eps, my + ny * eps];
-  const candidateB: [number, number] = [mx - nx * eps, my - ny * eps];
-  return pointInPolygon(candidateA, contour) ? candidateA : candidateB;
-}
-
 export function groupContoursIntoIslands(contours: Array<Array<[number, number]>>): GlyphIsland[] {
   const areas = contours.map(signedArea2D);
   const parentOf: (number | null)[] = contours.map(() => null);
-  const probes = contours.map(interiorProbe);
 
   for (let i = 0; i < contours.length; i++) {
     let bestParent = -1;
     let bestArea = Infinity;
     for (let j = 0; j < contours.length; j++) {
       if (i === j) continue;
-      if (pointInPolygon(probes[i], contours[j]) && Math.abs(areas[j]) < bestArea) {
+      if (pointInPolygon(contours[i][0], contours[j]) && Math.abs(areas[j]) < bestArea) {
         bestParent = j;
         bestArea = Math.abs(areas[j]);
       }

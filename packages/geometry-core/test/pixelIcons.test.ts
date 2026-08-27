@@ -6,8 +6,13 @@ import { extrudeGlyphIsland } from "../src/generators/glyphExtrude.js";
 import { mergeMeshes, computeSignedVolume } from "../src/mesh.js";
 import { validateMesh } from "../src/validate.js";
 
+// ICON_OPTIONS also includes the restored legacy emoji-font icons (id
+// prefixed "legacy"), which have no pixel grid at all by design -- those
+// are covered separately by iconFont.test.ts instead.
+const PIXEL_ICON_OPTIONS = ICON_OPTIONS.filter((icon) => !icon.id.startsWith("legacy"));
+
 describe("pixel icons: every curated icon has a grid and extrudes cleanly", () => {
-  for (const icon of ICON_OPTIONS) {
+  for (const icon of PIXEL_ICON_OPTIONS) {
     it(`"${icon.id}" has a grid and extrudes to a watertight solid`, () => {
       const grid = getPixelIconGrid(icon.char);
       expect(grid, `${icon.id}: no grid registered`).not.toBeNull();
@@ -34,7 +39,7 @@ describe("pixel icons: every curated icon has a grid and extrudes cleanly", () =
   });
 
   it("a single icon never wraps or produces multiple size attempts -- it just shrinks to fit", () => {
-    const grid = getPixelIconGrid(ICON_OPTIONS[0].char)!;
+    const grid = getPixelIconGrid(PIXEL_ICON_OPTIONS[0].char)!;
     const { islands } = pixelIconIslands(grid, 6, 2, 2);
     expect(islands.length).toBeGreaterThan(0);
   });

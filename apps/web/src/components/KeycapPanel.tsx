@@ -224,17 +224,51 @@ const ICON_LABELS_VI: Record<string, string> = {
   cross: "Dấu X",
   circleO: "Vòng tròn",
   sparklingHeart: "Trái tim lấp lánh",
+  legacyCheck: "Dấu tích",
+  legacyCross: "Dấu X",
+  legacyStar: "Ngôi sao",
+  legacyHeart: "Trái tim",
+  legacyQuestion: "Dấu hỏi",
+  legacyMusic: "Nốt nhạc",
+  legacyDollar: "Đô la",
+  legacyGhost: "Ma",
+  legacyFire: "Lửa",
+  legacyBolt: "Tia sét",
+  legacyController: "Tay cầm game",
+  legacyDice: "Xúc xắc",
+  legacyDog: "Chó",
+  legacyMoon: "Mặt trăng",
+  legacySmiley: "Mặt cười",
+  legacySun: "Mặt trời",
+  legacyGem: "Đá quý",
+  legacyKey: "Chìa khóa",
+  legacyLock: "Ổ khóa",
+  legacyGear: "Bánh răng",
+  legacyAnchor: "Mỏ neo",
+  legacySnowflake: "Bông tuyết",
+  legacyFrown: "Mặt buồn",
+  legacyBrokenHeart: "Trái tim vỡ",
+  legacySparkles: "Lấp lánh",
+  legacyExclamation: "Dấu chấm than",
+  legacyDoubleExclamation: "Hai dấu chấm than",
+  legacyArrowDown: "Mũi tên xuống",
+  legacyInfinity: "Vô cực",
+  legacyCircle: "Vòng tròn",
+  legacyClub: "Chủ bài (♣)",
+  legacySparklingHeart: "Trái tim lấp lánh",
+  legacyChatBubble: "Bong bóng chat",
 };
 
-/** Renders a pixel-icon's own boolean grid (see geometry-core's
- *  pixelIcons.ts -- the exact same bitmap the generator extrudes into print
- *  geometry) as a small SVG of filled squares, so the picker shows the real
- *  icon shape instead of a meaningless id string -- `icon.char` is no
- *  longer a literal displayable character now that icons are pixel bitmaps
- *  rather than emoji-font glyphs (see icons.ts's own doc comment). */
+/** Renders one icon's preview: a pixel icon (see geometry-core's
+ *  pixelIcons.ts) draws its own boolean grid as a small SVG of filled
+ *  squares -- the exact bitmap the generator extrudes into print geometry
+ *  -- while a legacy emoji-font icon has no such grid (`char` is a literal
+ *  Unicode character for those), so it just renders that character via the
+ *  browser's own system emoji font, same as before this app had pixel
+ *  icons at all. */
 function IconPreview({ iconId }: { iconId: string }) {
   const grid = getPixelIconGrid(iconId);
-  if (!grid) return null;
+  if (!grid) return <span style={{ fontSize: 16, lineHeight: 1 }}>{iconId}</span>;
   const rows = grid.length;
   const cols = grid[0]?.length ?? 0;
   const cell = 100 / Math.max(rows, cols);
@@ -249,9 +283,10 @@ function IconPreview({ iconId }: { iconId: string }) {
   );
 }
 
-/** Grid of the curated pixel-icon options (see geometry-core's icons.ts --
- *  this is the exact same list the generator can actually extrude; there's
- *  no separate "UI icon set" to keep in sync). */
+/** Grid of the curated icon options (see geometry-core's icons.ts -- this
+ *  is the exact same list the generator can actually extrude; there's no
+ *  separate "UI icon set" to keep in sync). Combines the pixel-art icon
+ *  set with the original emoji-font set. */
 function IconGrid({ value, onSelect }: { value: string; onSelect: (char: string) => void }) {
   return (
     <div

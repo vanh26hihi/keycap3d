@@ -1,5 +1,5 @@
 import type { GlyphIsland } from "./glyphOutline";
-import { groupContoursIntoIslands } from "./glyphOutline";
+import { pointInPolygon, signedArea2D } from "./glyphOutline";
 
 type Pt = [number, number];
 
@@ -153,7 +153,7 @@ export function pixelIconIslands(
 ): PixelIconLayoutResult {
   const contours = tracePixelGrid(grid);
   if (contours.length === 0) return { islands: [], actualCapHeightMm: 0 };
-  const rawIslands = groupContoursIntoIslands(contours);
+  const rawIslands = groupPixelContoursIntoIslands(contours);
 
   let minX = Infinity;
   let minY = Infinity;
@@ -186,4 +186,95 @@ export function pixelIconIslands(
   }));
 
   return { islands, actualCapHeightMm: targetCapHeightMm * shrink };
+}
+
+/**
+ * A point guaranteed to sit strictly inside `contour` (never exactly on its
+ * boundary), close to its first edge. Pixel-traced contours routinely share
+ * an EXACT coincident vertex with a different, disjoint contour (two
+ * separate icon shapes that happen to touch at one shared grid corner --
+ * unlike smooth font-glyph curves, where floating-point bezier points from
+ * different letterforms essentially never land on the exact same
+ * coordinate). Testing containment from a contour's raw first vertex (what
+ * `glyphOutline.ts`'s `groupContoursIntoIslands` does, correctly, for font
+ * glyphs) is ill-defined for ray-casting point-in-polygon when that vertex
+ * sits exactly on another contour's edge, and was observed to spuriously
+ * report "contained" for such touching-but-disjoint pixel contours. A point
+ * hugging the contour's own edge, nudged inward by a small amount, is never
+ * on another shape's boundary.
+ */
+function interiorProbe(contour: Pt[]): Pt {
+  const [x0, y0] = contour[0];
+  const [x1, y1] = contour[1] ?? contour[0];
+  const mx = (x0 + x1) / 2;
+  const my = (y0 + y1) / 2;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const eps = Math.max(len * 0.25, 1e-4);
+  const candidateA: Pt = [mx + nx * eps, my + ny * eps];
+  const candidateB: Pt = [mx - nx * eps, my - ny * eps];
+  return pointInPolygon(candidateA, contour) ? candidateA : candidateB;
+}
+
+/**
+ * The pixel-icon equivalent of `glyphOutline.ts`'s `groupContoursIntoIslands`
+ * -- same even-odd nesting-by-depth logic, but probing containment from
+ * `interiorProbe` above instead of each contour's raw first vertex, which
+ * is what pixel-traced contours specifically need (see that function's doc
+ * comment). Kept as its own copy rather than parameterizing the shared
+ * function with a probe callback: the two probes solve genuinely different
+ * problems (shared-vertex touching contours here; nothing analogous for
+ * font glyphs) and letting each stay simple/self-contained is clearer than
+ * one function trying to serve both.
+ */
+function groupPixelContoursIntoIslands(contours: Pt[][]): GlyphIsland[] {
+  const areas = contours.map(signedArea2D);
+  const parentOf: (number | null)[] = contours.map(() => null);
+  const probes = contours.map(interiorProbe);
+
+  for (let i = 0; i < contours.length; i++) {
+    let bestParent = -1;
+    let bestArea = Infinity;
+    for (let j = 0; j < contours.length; j++) {
+      if (i === j) continue;
+      if (pointInPolygon(probes[i], contours[j]) && Math.abs(areas[j]) < bestArea) {
+        bestParent = j;
+        bestArea = Math.abs(areas[j]);
+      }
+    }
+    parentOf[i] = bestParent >= 0 ? bestParent : null;
+  }
+
+  const depthOf = (i: number): number => {
+    let depth = 0;
+    let cur = parentOf[i];
+    const visited = new Set<number>([i]);
+    while (cur !== null && !visited.has(cur)) {
+      visited.add(cur);
+      depth++;
+      cur = parentOf[cur];
+    }
+    return depth;
+  };
+  const depths = contours.map((_, i) => depthOf(i));
+
+  const islands = new Map<number, GlyphIsland>();
+  for (let i = 0; i < contours.length; i++) {
+    if (depths[i] % 2 === 0) {
+      const outer = areas[i] < 0 ? [...contours[i]].reverse() : contours[i];
+      islands.set(i, { outer, holes: [] });
+    }
+  }
+  for (let i = 0; i < contours.length; i++) {
+    if (depths[i] % 2 !== 0 && parentOf[i] !== null) {
+      const island = islands.get(parentOf[i]!);
+      if (!island) continue;
+      const hole = areas[i] > 0 ? [...contours[i]].reverse() : contours[i];
+      island.holes.push(hole);
+    }
+  }
+  return Array.from(islands.values());
 }
