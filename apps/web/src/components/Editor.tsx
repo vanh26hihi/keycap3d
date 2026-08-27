@@ -6,6 +6,7 @@ import { SceneTreePanel } from "./SceneTreePanel";
 import { TransformPanel } from "./TransformPanel";
 import { SplitPanel } from "./SplitPanel";
 import { Viewport } from "./Viewport";
+import { BatchCreateDialog } from "./BatchCreateDialog";
 import { useEditorStore } from "../state/store";
 
 export function Editor() {
@@ -75,6 +76,7 @@ export function Editor() {
         </div>
         {splitActive ? <SplitPanel /> : <TransformPanel />}
       </div>
+      <BatchCreateDialog />
     </div>
   );
 }

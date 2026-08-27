@@ -2,8 +2,11 @@
 
 import { useRef, useState } from "react";
 import { createCubeMesh, createCylinderMesh } from "@keycap-web/geometry-core";
+import { DEFAULT_KEYCAP_PARAMS } from "@keycap-web/geometry-core/keycap";
 import { useEditorStore, type TransformMode } from "../state/store";
 import { downloadBlob, exportKeycapMultiPart3MFBlob, exportNodeToSTLBlob, importSTLFile } from "../lib/importExport";
+import { loadSavedDefaultParams } from "../lib/keycapDefaults";
+import { findFreePosition, occupiedRectsForProject } from "../lib/placement";
 
 const MODES: { mode: TransformMode; label: string; key: string }[] = [
   { mode: "translate", label: "Di chuyển", key: "1" },
@@ -26,7 +29,15 @@ export function Toolbar() {
   const beginSplit = useEditorStore((s) => s.beginSplit);
   const splitActive = useEditorStore((s) => s.splitSession !== null);
   const addKeycapNode = useEditorStore((s) => s.addKeycapNode);
+  const setBatchCreateOpen = useEditorStore((s) => s.setBatchCreateOpen);
   const keycapStatus = useEditorStore((s) => s.keycapStatus);
+  const project = useEditorStore((s) => s.project);
+
+  const handleAddKeycap = () => {
+    const template = loadSavedDefaultParams() ?? DEFAULT_KEYCAP_PARAMS;
+    const position = findFreePosition(occupiedRectsForProject(project), template.widthMm, template.lengthMm);
+    void addKeycapNode(undefined, [position[0], position[1], 0]);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [exporting3mf, setExporting3mf] = useState(false);
@@ -191,11 +202,21 @@ export function Toolbar() {
           type="button"
           className="toolbar-btn"
           disabled={splitActive || keycapStatus === "generating"}
-          onClick={() => void addKeycapNode()}
+          onClick={handleAddKeycap}
           data-testid="add-keycap-btn"
           title="Thêm một keycap tham số (mặc định 18.5x18.5x10mm)"
         >
           {keycapStatus === "generating" ? "Đang tạo…" : "+ Keycap"}
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn"
+          disabled={splitActive}
+          onClick={() => setBatchCreateOpen(true)}
+          data-testid="open-batch-create-btn"
+          title="Nhập một câu, mỗi từ tạo ra 1 keycap riêng -- xác nhận trước khi tạo"
+        >
+          + Tạo hàng loạt từ chữ
         </button>
       </div>
     </div>

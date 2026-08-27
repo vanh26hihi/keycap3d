@@ -5,7 +5,6 @@ import { DEFAULT_KEYCAP_PARAMS, maxFlushSocketDepthMm, type KeycapParams } from 
 import { ICON_OPTIONS } from "@keycap-web/geometry-core/icons";
 import { useEditorStore } from "../state/store";
 import { loadSavedDefaultParams, saveDefaultParams } from "../lib/keycapDefaults";
-import { PRINT_BED_WIDTH_MM } from "../lib/printBed";
 
 function NumberField({
   fieldKey,
@@ -307,77 +306,19 @@ export function KeycapPanel({
   const updateKeycapParamsBatch = useEditorStore((s) => s.updateKeycapParamsBatch);
   const status = useEditorStore((s) => s.keycapStatus);
   const error = useEditorStore((s) => s.keycapError);
-  const addKeycapNode = useEditorStore((s) => s.addKeycapNode);
-  const node = useEditorStore((s) => s.project.nodes[nodeId]);
-  const updateNodeTransformDirect = useEditorStore((s) => s.updateNodeTransformDirect);
-  const commitTransform = useEditorStore((s) => s.commitTransform);
-
   const isBatch = !!batchNodeIds && batchNodeIds.length > 1;
   const commit = (partial: Partial<KeycapParams>) =>
     void (isBatch ? updateKeycapParamsBatch(batchNodeIds!, partial) : updateKeycapParams(nodeId, partial));
 
-  /**
-   * Space-separated words in the Legend text field spawn one keycap PER
-   * WORD, laid out side by side, instead of putting all the words on one
-   * keycap -- e.g. typing "ESC CTRL ALT" creates 3 separate keycaps, not
-   * one keycap with 3 lines. An explicit newline (Enter in the textarea)
-   * still means "next line on THIS SAME keycap" -- only horizontal
-   * whitespace triggers the split, so "ESC\nKEY CTRL" makes a 2-line "ESC
-   * / KEY" keycap plus a separate 1-line "CTRL" keycap. Single-word input
-   * (the common case) is unaffected -- this only fires when there's
-   * actually more than one word to split.
-   */
-  const commitLegendText = (value: string) => {
-    // In batch-edit mode (multiple keycaps already selected), space-splitting
-    // into new keycaps would be a confusing second "create more keycaps"
-    // feature layered on top of "edit the ones I already selected" -- just
-    // set every selected keycap's legendText to exactly what was typed.
-    if (isBatch) {
-      commit({ legendText: value });
-      return;
-    }
-    const words = value
-      .trim()
-      .split(/[ \t]+/)
-      .map((w) => w.trim())
-      .filter((w) => w.length > 0);
-    if (words.length <= 1) {
-      commit({ legendText: value });
-      return;
-    }
-    commit({ legendText: words[0] });
-    const gapMm = 2;
-    const basePosition = node?.designTransform.position ?? [0, 0, 0];
-    // Wraps into rows once a row would run wider than the P2S's actual bed
-    // (256mm) instead of laying every word out in one ever-longer line, the
-    // same way you'd actually arrange separate parts on a real print bed.
-    const maxPerRow = Math.max(1, Math.floor(PRINT_BED_WIDTH_MM / (params.widthMm + gapMm)));
-    const rowCount = Math.ceil(words.length / maxPerRow);
-    const colCount = Math.min(words.length, maxPerRow);
-    // The WHOLE cluster (including the original keycap at index 0) is
-    // centered on basePosition rather than growing purely in +X/+Y from
-    // it -- growing one-directionally means even a modest word count can
-    // push well past the bed edge in that one direction while leaving the
-    // opposite side of the bed completely unused.
-    const gridWidthMm = (colCount - 1) * (params.widthMm + gapMm);
-    const gridHeightMm = (rowCount - 1) * (params.lengthMm + gapMm);
-    const startX = basePosition[0] - gridWidthMm / 2;
-    const startY = basePosition[1] + gridHeightMm / 2;
-
-    words.forEach((word, index) => {
-      const col = index % maxPerRow;
-      const row = Math.floor(index / maxPerRow);
-      const position: [number, number, number] = [startX + col * (params.widthMm + gapMm), startY - row * (params.lengthMm + gapMm), basePosition[2]];
-      if (index === 0) {
-        if (!node) return;
-        const nextTransform = { ...node.designTransform, position };
-        updateNodeTransformDirect(nodeId, nextTransform);
-        commitTransform(nodeId, node.designTransform);
-      } else {
-        void addKeycapNode({ ...params, legendText: word }, position);
-      }
-    });
-  };
+  // Plain, simple text commit -- this field just edits THIS keycap's (or
+  // every batch-selected keycap's) own legend text. Creating a whole SET of
+  // new keycaps from a phrase is a deliberate, separate action now (the
+  // "+ Tạo hàng loạt từ chữ" dialog, confirmed explicitly before anything
+  // is created) rather than an implicit side effect of typing a space into
+  // this field -- typing "ESC CTRL ALT" here used to silently spawn 2 EXTRA
+  // keycaps, which fought with "just edit this keycap's label" as the
+  // field's other, more common use.
+  const commitLegendText = (value: string) => commit({ legendText: value });
 
   return (
     <div className="transform-group" data-testid="keycap-panel">
@@ -577,7 +518,7 @@ export function KeycapPanel({
           <TextAreaField
             fieldKey="legendText"
             label="Chữ"
-            title="Gõ cách nhau (dấu cách) = mỗi từ 1 keycap riêng, xếp cạnh nhau. Enter (xuống dòng) = nhiều dòng trên CÙNG 1 keycap."
+            title="Chữ/icon hiện trên keycap này. Enter (xuống dòng) = nhiều dòng trên cùng 1 keycap. Muốn tạo nhiều keycap cùng lúc từ 1 câu, dùng nút '+ Tạo hàng loạt từ chữ' ở thanh công cụ."
             value={params.legendText}
             onCommit={commitLegendText}
           />

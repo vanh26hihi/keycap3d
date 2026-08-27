@@ -117,6 +117,14 @@ export interface EditorStore {
   setDraggingGroup(ids: string[]): void;
   setIsolated(id: string | null): void;
 
+  /** Whether the "+ Tạo hàng loạt từ chữ" dialog is open -- purely
+   *  transient UI state (never touched by undo/redo), same as
+   *  `isolatedNodeId`. Kept in the store (not local component state) since
+   *  the toolbar button that opens it and the dialog itself that closes it
+   *  are siblings, not parent/child. */
+  batchCreateOpen: boolean;
+  setBatchCreateOpen(open: boolean): void;
+
   execute(command: Command): void;
   undo(): void;
   redo(): void;
@@ -208,6 +216,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   draggingGroupIds: [],
   splitPlaneDragging: false,
   isolatedNodeId: null,
+  batchCreateOpen: false,
   splitSession: null,
   splitStatus: "idle",
   splitError: null,
@@ -241,6 +250,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setIsolated(id) {
     set({ isolatedNodeId: id });
+  },
+
+  setBatchCreateOpen(open) {
+    set({ batchCreateOpen: open });
   },
 
   execute(command) {
