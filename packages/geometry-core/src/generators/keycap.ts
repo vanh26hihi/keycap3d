@@ -452,18 +452,28 @@ const EMBOSS_EMBED_MM = 0.3;
  * nothing to draw (empty text, or every character unsupported by the
  * embedded font) so the caller can skip the boolean step entirely.
  */
+/** Shifts every island's points by `dyMm` on the Y axis -- used to
+ *  re-center the legend/icon on the bubble body's own visual center
+ *  (see BUBBLE_TAIL_HEIGHT_MM's offset) rather than the raw keycap top's
+ *  center, which sits slightly lower once a tail is hanging off the
+ *  bottom of the bubble. */
+function shiftIslandsY(islands: ReturnType<typeof layoutLegendIslands>["islands"], dyMm: number): typeof islands {
+  if (dyMm === 0) return islands;
+  const shift = (ring: Array<[number, number]>): Array<[number, number]> => ring.map(([x, y]) => [x, y + dyMm]);
+  return islands.map((island) => ({ outer: shift(island.outer), holes: island.holes.map(shift) }));
+}
+
 function buildLegendMesh(
   text: string,
   targetCapHeightMm: number,
-  topWidthMm: number,
-  topLengthMm: number,
+  availableWidthMm: number,
+  availableLengthMm: number,
   bottomZ: number,
   topZ: number,
   align: LegendAlign,
   kind: KeycapParams["legendKind"],
+  centerOffsetYMm = 0,
 ): MeshBuffer | null {
-  const availableWidthMm = Math.max(topWidthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
-  const availableLengthMm = Math.max(topLengthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
   if (kind === "icon") {
     // Three icon sources share the one `legendText` field, tried in order:
     // 1. Pixel-art icons (see icons.ts) looked up by their own short id.
@@ -480,17 +490,37 @@ function buildLegendMesh(
     if (grid) {
       const { islands } = pixelIconIslands(grid, targetCapHeightMm, availableWidthMm, availableLengthMm);
       if (islands.length === 0) return null;
-      return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
+      return mergeMeshes(shiftIslandsY(islands, centerOffsetYMm).map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
     }
     const textFont = getLegendFont();
     const font = [...text].length === 1 && textFont.charToGlyphIndex(text) !== 0 ? textFont : getIconFont();
     const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align, font);
     if (islands.length === 0) return null;
-    return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
+    return mergeMeshes(shiftIslandsY(islands, centerOffsetYMm).map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
   }
   const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align);
   if (islands.length === 0) return null;
-  return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
+  return mergeMeshes(shiftIslandsY(islands, centerOffsetYMm).map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
+}
+
+interface BubbleBodyDimensions {
+  bodyWidthMm: number;
+  bodyLengthMm: number;
+  /** The body's own center, offset from the keycap top's center by half the
+   *  tail's height so the whole body+tail assembly stays centered within
+   *  the keycap's own top footprint (see buildBubbleMesh). */
+  bodyCenterYMm: number;
+}
+
+/** Shared by `buildBubbleMesh` (the plaque geometry itself) and
+ *  `buildLegendParts` (sizing/centering the legend so it fits INSIDE the
+ *  bubble body, not the keycap's full top footprint -- a legend that
+ *  ignores the bubble's own smaller area renders oversized relative to the
+ *  bubble background it's supposed to sit on). */
+function bubbleBodyDimensions(topWidthMm: number, topLengthMm: number): BubbleBodyDimensions {
+  const bodyWidthMm = Math.max(topWidthMm - 2 * BUBBLE_MARGIN_MM, 2);
+  const bodyLengthMm = Math.max(topLengthMm - 2 * BUBBLE_MARGIN_MM - BUBBLE_TAIL_HEIGHT_MM, 2);
+  return { bodyWidthMm, bodyLengthMm, bodyCenterYMm: BUBBLE_TAIL_HEIGHT_MM / 2 };
 }
 
 /**
@@ -503,13 +533,8 @@ function buildLegendMesh(
  * convention) from the body's bottom edge.
  */
 function buildBubbleMesh(engine: BooleanEngine, topWidthMm: number, topLengthMm: number, bottomZ: number, topZ: number): MeshBuffer {
-  const bodyWidthMm = Math.max(topWidthMm - 2 * BUBBLE_MARGIN_MM, 2);
-  const bodyLengthMm = Math.max(topLengthMm - 2 * BUBBLE_MARGIN_MM - BUBBLE_TAIL_HEIGHT_MM, 2);
+  const { bodyWidthMm, bodyLengthMm, bodyCenterYMm } = bubbleBodyDimensions(topWidthMm, topLengthMm);
   const cornerRadiusMm = Math.min(bodyWidthMm, bodyLengthMm) * BUBBLE_CORNER_RADIUS_FRACTION;
-  // Shift the body up by half the tail's height so the whole assembly
-  // (body + tail) stays centered within the original topWidth/topLengthMm
-  // footprint, matching where the legend itself is centered.
-  const bodyCenterYMm = BUBBLE_TAIL_HEIGHT_MM / 2;
   const bodyProfile = roundedRectProfile(bodyWidthMm, bodyLengthMm, cornerRadiusMm, PROFILE_SEGMENTS_PER_CORNER).map(
     ([x, y]): [number, number] => [x, y + bodyCenterYMm],
   );
@@ -557,9 +582,18 @@ function buildLegendParts(engine: BooleanEngine, params: KeycapParams, topWidthM
   // The bubble plaque, when enabled, raises the "surface" the legend itself
   // renders relative to -- everything below (emboss embed depth, engrave
   // roof budget) shifts up by exactly the plaque's own relief so the legend
-  // sits on/into the plaque's raised face, not the bare keycap top.
+  // sits on/into the plaque's raised face, not the bare keycap top. It also
+  // shrinks the legend's own available area down to the bubble BODY's
+  // dimensions (rather than the keycap's full top footprint) and re-centers
+  // it on the body's own center -- without this, a short legend (e.g. a
+  // single icon) auto-fits to nearly the whole keycap top and renders
+  // oversized relative to the visually smaller bubble it's supposed to sit
+  // on, and off-center once the tail shifts the body upward.
   let legendSurfaceZ = params.heightMm;
   let bubbleMesh: MeshBuffer | null = null;
+  let availableWidthMm = Math.max(topWidthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
+  let availableLengthMm = Math.max(topLengthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
+  let centerOffsetYMm = 0;
   if (params.legendBubble) {
     // Always at least a little shallower than the legend's own relief (a
     // background reads as a background), but never so tall it starts
@@ -567,18 +601,23 @@ function buildLegendParts(engine: BooleanEngine, params: KeycapParams, topWidthM
     const bubbleReliefMm = Math.min(BUBBLE_RELIEF_MM, Math.max(params.legendReliefMm - 0.05, 0.1));
     bubbleMesh = buildBubbleMesh(engine, topWidthMm, topLengthMm, params.heightMm - EMBOSS_EMBED_MM, params.heightMm + bubbleReliefMm);
     legendSurfaceZ = params.heightMm + bubbleReliefMm;
+    const { bodyWidthMm, bodyLengthMm, bodyCenterYMm } = bubbleBodyDimensions(topWidthMm, topLengthMm);
+    availableWidthMm = Math.max(bodyWidthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
+    availableLengthMm = Math.max(bodyLengthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
+    centerOffsetYMm = bodyCenterYMm;
   }
 
   if (params.legendMode === "emboss") {
     const legendMesh = buildLegendMesh(
       text,
       params.legendFontSizeMm,
-      topWidthMm,
-      topLengthMm,
+      availableWidthMm,
+      availableLengthMm,
       legendSurfaceZ - EMBOSS_EMBED_MM,
       legendSurfaceZ + params.legendReliefMm,
       params.legendAlign,
       params.legendKind,
+      centerOffsetYMm,
     );
     return { bubbleMesh, legendMesh, legendMode: "emboss" };
   }
@@ -590,12 +629,13 @@ function buildLegendParts(engine: BooleanEngine, params: KeycapParams, topWidthM
   const legendMesh = buildLegendMesh(
     text,
     params.legendFontSizeMm,
-    topWidthMm,
-    topLengthMm,
+    availableWidthMm,
+    availableLengthMm,
     legendSurfaceZ - effectiveReliefMm,
     legendSurfaceZ + CUT_EXTENSION_MM,
     params.legendAlign,
     params.legendKind,
+    centerOffsetYMm,
   );
   return { bubbleMesh, legendMesh, legendMode: "engrave" };
 }

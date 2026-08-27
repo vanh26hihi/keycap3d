@@ -849,6 +849,31 @@ describe("createKeycapMesh: legendBubble (speech-bubble plaque behind the legend
     }
   });
 
+  it("shrinks the icon/legend to fit the bubble's own (smaller) body instead of the full keycap top", async () => {
+    // Regression test: the icon used to auto-fit to nearly the whole
+    // keycap top regardless of legendBubble, rendering oversized relative
+    // to the visually smaller bubble background it's supposed to sit on.
+    // A deliberately large requested size: small enough to render at full
+    // size against the bare keycap top's own margin, but too big to fit
+    // the bubble body's smaller area once its own margin is subtracted --
+    // exactly the case the old bug missed (both used to render at the same
+    // uncapped size regardless of legendBubble).
+    const params = { legendText: "starFilled", legendKind: "icon" as const, legendMode: "emboss" as const, legendFontSizeMm: 14 };
+    const withoutBubble = await createKeycapMeshParts({ ...params, legendBubble: false });
+    const withBubble = await createKeycapMeshParts({ ...params, legendBubble: true });
+    const boxWithout = computeBoundingBox(withoutBubble.legend!);
+    const boxWith = computeBoundingBox(withBubble.legend!);
+    expect(boxWith.size[0]).toBeLessThan(boxWithout.size[0]);
+    expect(boxWith.size[1]).toBeLessThan(boxWithout.size[1]);
+    // ...and stays within the bubble body's own footprint (with the bubble
+    // enabled, `withBubble.bubble` is the plaque itself).
+    const bubbleBox = computeBoundingBox(withBubble.bubble!);
+    expect(boxWith.max[0]).toBeLessThanOrEqual(bubbleBox.max[0]);
+    expect(boxWith.min[0]).toBeGreaterThanOrEqual(bubbleBox.min[0]);
+    expect(boxWith.max[1]).toBeLessThanOrEqual(bubbleBox.max[1]);
+    expect(boxWith.min[1]).toBeGreaterThanOrEqual(bubbleBox.min[1]);
+  });
+
   it("the plaque (body + tail) is itself a real, single watertight solid", async () => {
     // Sanity check on buildBubbleMesh's own union, independent of the
     // legend on top of it: with legendReliefMm cranked up, the plaque
