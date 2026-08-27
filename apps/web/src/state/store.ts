@@ -116,7 +116,7 @@ export interface EditorStore {
 
   /** M4: adds a new parametric keycap node with default (or overridden)
    *  params, selects it, and returns its id once generation completes. */
-  addKeycapNode(paramsOverride?: Partial<KeycapParams>): Promise<string>;
+  addKeycapNode(paramsOverride?: Partial<KeycapParams>, positionOverride?: [number, number, number]): Promise<string>;
   /** Merges `partial` into the node's current keycap params, regenerates the
    *  mesh, and pushes exactly one undo step. No-ops (no history entry) if
    *  the node isn't a keycap node or the merged params are unchanged. */
@@ -458,7 +458,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
   },
 
-  async addKeycapNode(paramsOverride) {
+  async addKeycapNode(paramsOverride, positionOverride) {
     const params: KeycapParams = resolveKeycapParams(paramsOverride ?? {});
     set({ keycapStatus: "generating", keycapError: null });
     try {
@@ -470,7 +470,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         visible: true,
         locked: false,
         color: "#8fa6c4",
-        designTransform: { ...IDENTITY_TRANSFORM },
+        designTransform: positionOverride
+          ? { ...IDENTITY_TRANSFORM, position: positionOverride }
+          : { ...IDENTITY_TRANSFORM },
         printTransform: null,
         mesh,
         origin: { kind: "primitive" },

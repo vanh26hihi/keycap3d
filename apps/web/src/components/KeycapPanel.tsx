@@ -63,12 +63,14 @@ function NumberField({
 function TextAreaField({
   fieldKey,
   label,
+  title,
   value,
   onCommit,
   rows = 2,
 }: {
   fieldKey: string;
   label: string;
+  title?: string;
   value: string;
   onCommit: (v: string) => void;
   rows?: number;
@@ -81,7 +83,7 @@ function TextAreaField({
   }, [value, focused, fieldKey]);
 
   return (
-    <label className="number-field" style={{ flex: 1 }}>
+    <label className="number-field" style={{ flex: 1 }} title={title}>
       <span>{label}</span>
       <textarea
         rows={rows}
@@ -288,8 +290,40 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
   const updateKeycapParams = useEditorStore((s) => s.updateKeycapParams);
   const status = useEditorStore((s) => s.keycapStatus);
   const error = useEditorStore((s) => s.keycapError);
+  const addKeycapNode = useEditorStore((s) => s.addKeycapNode);
+  const nodePosition = useEditorStore((s) => s.project.nodes[nodeId]?.designTransform.position);
 
   const commit = (partial: Partial<KeycapParams>) => void updateKeycapParams(nodeId, partial);
+
+  /**
+   * Space-separated words in the Legend text field spawn one keycap PER
+   * WORD, laid out side by side, instead of putting all the words on one
+   * keycap -- e.g. typing "ESC CTRL ALT" creates 3 separate keycaps, not
+   * one keycap with 3 lines. An explicit newline (Enter in the textarea)
+   * still means "next line on THIS SAME keycap" -- only horizontal
+   * whitespace triggers the split, so "ESC\nKEY CTRL" makes a 2-line "ESC
+   * / KEY" keycap plus a separate 1-line "CTRL" keycap. Single-word input
+   * (the common case) is unaffected -- this only fires when there's
+   * actually more than one word to split.
+   */
+  const commitLegendText = (value: string) => {
+    const words = value
+      .trim()
+      .split(/[ \t]+/)
+      .map((w) => w.trim())
+      .filter((w) => w.length > 0);
+    if (words.length <= 1) {
+      commit({ legendText: value });
+      return;
+    }
+    commit({ legendText: words[0] });
+    const gapMm = 2;
+    const basePosition = nodePosition ?? [0, 0, 0];
+    words.slice(1).forEach((word, i) => {
+      const offsetX = (params.widthMm + gapMm) * (i + 1);
+      void addKeycapNode({ ...params, legendText: word }, [basePosition[0] + offsetX, basePosition[1], basePosition[2]]);
+    });
+  };
 
   return (
     <div className="transform-group" data-testid="keycap-panel">
@@ -475,7 +509,13 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
 
       {params.legendKind === "text" ? (
         <div className="transform-row" style={{ marginBottom: 6 }}>
-          <TextAreaField fieldKey="legendText" label="Chữ" value={params.legendText} onCommit={(v) => commit({ legendText: v })} />
+          <TextAreaField
+            fieldKey="legendText"
+            label="Chữ"
+            title="Gõ cách nhau (dấu cách) = mỗi từ 1 keycap riêng, xếp cạnh nhau. Enter (xuống dòng) = nhiều dòng trên CÙNG 1 keycap."
+            value={params.legendText}
+            onCommit={commitLegendText}
+          />
         </div>
       ) : (
         <div className="transform-row" style={{ marginBottom: 6 }}>

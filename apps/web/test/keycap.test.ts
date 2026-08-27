@@ -48,6 +48,18 @@ describe("M4 addKeycapNode", () => {
     expect(box.size[2]).toBeCloseTo(12, 2);
   });
 
+  it("accepts a position override -- used by the Legend field's batch-create-per-word flow to lay siblings out side by side", async () => {
+    const id = await useEditorStore.getState().addKeycapNode({}, [20.5, 0, 0]);
+    const node = useEditorStore.getState().project.nodes[id];
+    expect(node.designTransform.position).toEqual([20.5, 0, 0]);
+  });
+
+  it("defaults to the identity position when no override is given (no regression for the plain call path)", async () => {
+    const id = await useEditorStore.getState().addKeycapNode();
+    const node = useEditorStore.getState().project.nodes[id];
+    expect(node.designTransform.position).toEqual([0, 0, 0]);
+  });
+
   it("Add Keycap is one undo step", async () => {
     const before = useEditorStore.getState().past.length;
     await useEditorStore.getState().addKeycapNode();
