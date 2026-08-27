@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_KEYCAP_PARAMS, maxFlushSocketDepthMm, type KeycapParams } from "@keycap-web/geometry-core/keycap";
 import { ICON_OPTIONS } from "@keycap-web/geometry-core/icons";
+import { getPixelIconGrid } from "@keycap-web/geometry-core/pixelIcons";
 import { useEditorStore } from "../state/store";
 import { loadSavedDefaultParams, saveDefaultParams } from "../lib/keycapDefaults";
 
@@ -203,47 +204,54 @@ const LEGEND_KIND_OPTIONS: Array<{ value: KeycapParams["legendKind"]; label: str
  *  is a shared library-level identifier (also used in fixture docs/tests),
  *  while this map is purely a UI display concern for this app. */
 const ICON_LABELS_VI: Record<string, string> = {
-  check: "Dấu tích",
-  cross: "Dấu X",
-  star: "Ngôi sao",
-  heart: "Trái tim",
-  question: "Dấu hỏi",
+  smiley: "Mặt cười",
+  neutralFace: "Mặt bình thường",
+  haha: "Haha",
+  sparkle: "Lấp lánh",
+  heartFilled: "Trái tim",
+  brokenHeart: "Trái tim vỡ",
+  starFilled: "Ngôi sao",
+  sparkleCluster: "Chùm lấp lánh",
   music: "Nốt nhạc",
   dollar: "Đô la",
-  ghost: "Ma",
-  fire: "Lửa",
-  bolt: "Tia sét",
-  controller: "Tay cầm game",
-  dice: "Xúc xắc",
-  dog: "Chó",
-  moon: "Mặt trăng",
-  smiley: "Mặt cười",
-  sun: "Mặt trời",
-  gem: "Đá quý",
-  key: "Chìa khóa",
-  lock: "Ổ khóa",
-  gear: "Bánh răng",
-  anchor: "Mỏ neo",
-  snowflake: "Bông tuyết",
-  frown: "Mặt buồn",
-  brokenHeart: "Trái tim vỡ",
-  sparkles: "Lấp lánh",
-  exclamation: "Dấu chấm than",
-  doubleExclamation: "Hai dấu chấm than",
+  clover: "Cỏ 4 lá",
   arrowDown: "Mũi tên xuống",
+  sleepZ: "Ngủ (Z)",
+  question: "Dấu hỏi",
+  exclamation: "Dấu chấm than",
+  splash: "Pháo hoa",
   infinity: "Vô cực",
-  circle: "Vòng tròn",
-  club: "Chủ bài (♣)",
+  cross: "Dấu X",
+  circleO: "Vòng tròn",
   sparklingHeart: "Trái tim lấp lánh",
-  chatBubble: "Bong bóng chat",
 };
 
-/** Grid of the curated icon/emoji options (see geometry-core's icons.ts --
+/** Renders a pixel-icon's own boolean grid (see geometry-core's
+ *  pixelIcons.ts -- the exact same bitmap the generator extrudes into print
+ *  geometry) as a small SVG of filled squares, so the picker shows the real
+ *  icon shape instead of a meaningless id string -- `icon.char` is no
+ *  longer a literal displayable character now that icons are pixel bitmaps
+ *  rather than emoji-font glyphs (see icons.ts's own doc comment). */
+function IconPreview({ iconId }: { iconId: string }) {
+  const grid = getPixelIconGrid(iconId);
+  if (!grid) return null;
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  const cell = 100 / Math.max(rows, cols);
+  return (
+    <svg viewBox="0 0 100 100" width={22} height={22} style={{ display: "block" }}>
+      {grid.flatMap((row, r) =>
+        row.map((on, c) =>
+          on ? <rect key={`${r}-${c}`} x={c * cell} y={r * cell} width={cell + 0.5} height={cell + 0.5} fill="currentColor" /> : null,
+        ),
+      )}
+    </svg>
+  );
+}
+
+/** Grid of the curated pixel-icon options (see geometry-core's icons.ts --
  *  this is the exact same list the generator can actually extrude; there's
- *  no separate "UI icon set" to keep in sync). Emoji render fine directly
- *  in the browser via its own system emoji font -- this grid is a picker
- *  UI, not the 3D geometry itself, so it doesn't need the embedded Noto
- *  Emoji subset that the generator uses for the actual print geometry. */
+ *  no separate "UI icon set" to keep in sync). */
 function IconGrid({ value, onSelect }: { value: string; onSelect: (char: string) => void }) {
   return (
     <div
@@ -259,9 +267,9 @@ function IconGrid({ value, onSelect }: { value: string; onSelect: (char: string)
           data-testid={`keycap-icon-${icon.id}`}
           onClick={() => onSelect(icon.char)}
           className={`toolbar-btn${value === icon.char ? " active" : ""}`}
-          style={{ fontSize: 16, padding: "4px 0", lineHeight: 1.4 }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4px 0" }}
         >
-          {icon.char}
+          <IconPreview iconId={icon.char} />
         </button>
       ))}
     </div>

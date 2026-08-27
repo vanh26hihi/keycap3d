@@ -6,7 +6,8 @@ import { createCubeMesh } from "../primitives/cube";
 import { createCylinderMesh } from "../primitives/cylinder";
 import { loftProfiles } from "./loft";
 import { layoutLegendIslands, type LegendAlign } from "./legendLayout";
-import { getIconFont } from "./iconFont";
+import { getPixelIconGrid } from "./pixelIcons";
+import { pixelIconIslands } from "./pixelTrace";
 import { extrudeGlyphIsland } from "./glyphExtrude";
 import { createBooleanEngine, type BooleanEngine } from "../boolean";
 
@@ -461,8 +462,14 @@ function buildLegendMesh(
 ): MeshBuffer | null {
   const availableWidthMm = Math.max(topWidthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
   const availableLengthMm = Math.max(topLengthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
-  const font = kind === "icon" ? getIconFont() : undefined;
-  const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align, font);
+  if (kind === "icon") {
+    const grid = getPixelIconGrid(text);
+    if (!grid) return null;
+    const { islands } = pixelIconIslands(grid, targetCapHeightMm, availableWidthMm, availableLengthMm);
+    if (islands.length === 0) return null;
+    return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
+  }
+  const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align);
   if (islands.length === 0) return null;
   return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
 }

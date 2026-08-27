@@ -2,27 +2,18 @@ import { getLegendFont } from "./legendFont";
 import { flattenPathToContours, groupContoursIntoIslands, type GlyphIsland } from "./glyphOutline";
 
 /** Cache of "how tall is a capital letter, as a fraction of unitsPerEm" --
- *  computed once per font from a reference glyph ('H' for the text font; see
- *  REFERENCE_GLYPH_OVERRIDE for fonts with no 'H', like the icon font) rather
- *  than trusting any specific font-metadata field (cap-height metadata is
- *  inconsistently populated across fonts), so it reflects the font's actual
- *  rendered ink extent. Keyed by font instance (WeakMap) since this module
- *  now lays out text with either the legend text font or the icon font. */
+ *  computed once per font from the 'H' glyph rather than trusting any
+ *  specific font-metadata field (cap-height metadata is inconsistently
+ *  populated across fonts), so it reflects the font's actual rendered ink
+ *  extent. Keyed by font instance (WeakMap), though in practice there's
+ *  only ever the one legend text font now that icons are pixel bitmaps
+ *  (see pixelIcons.ts/pixelTrace.ts) rather than a second embedded font. */
 const capHeightRatioCache = new WeakMap<ReturnType<typeof getLegendFont>, number>();
-
-/** Fonts with no Latin 'H' (the icon font) need a different reference glyph
- *  to measure cap-height against; keyed by font instance. */
-const REFERENCE_GLYPH_OVERRIDE = new WeakMap<ReturnType<typeof getLegendFont>, string>();
-
-export function setReferenceGlyph(font: ReturnType<typeof getLegendFont>, char: string): void {
-  REFERENCE_GLYPH_OVERRIDE.set(font, char);
-}
 
 function capHeightRatio(font: ReturnType<typeof getLegendFont>): number {
   let ratio = capHeightRatioCache.get(font);
   if (ratio === undefined) {
-    const refChar = REFERENCE_GLYPH_OVERRIDE.get(font) ?? "H";
-    const path = font.charToGlyph(refChar).getPath(0, 0, font.unitsPerEm);
+    const path = font.charToGlyph("H").getPath(0, 0, font.unitsPerEm);
     const bbox = path.getBoundingBox();
     ratio = Math.abs(bbox.y2 - bbox.y1) / font.unitsPerEm;
     capHeightRatioCache.set(font, ratio);

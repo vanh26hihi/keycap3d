@@ -762,19 +762,20 @@ describe("createKeycapMesh: legend (vector text on the top face)", () => {
   });
 });
 
-describe("createKeycapMesh: legendKind 'icon' (emoji legend via the icon font)", () => {
+describe("createKeycapMesh: legendKind 'icon' (pixel-art legend via pixelIcons.ts)", () => {
   it("renders every curated icon, emboss and engrave, as print-safe geometry (no holes, no non-manifold edges)", async () => {
     // Checks openEdgeCount/nonManifoldEdgeCount rather than the stricter
     // isWatertight/isManifold (which also demands zero degenerate
-    // triangles): for a few icon+mode combinations (e.g. "heart", whose
-    // glyph has a sharp cusp point), manifold-3d's boolean union with the
+    // triangles): for a few icon+mode combinations (e.g. ring-shaped
+    // outlines like "circleO"), manifold-3d's boolean union with the
     // keycap shell occasionally emits a harmless zero-area sliver triangle
     // at a coincident-surface touch point. Confirmed this is a boolean-op
     // artifact, not a defect in the icon geometry itself: the SAME icon
-    // extruded standalone (see iconFont.test.ts, which does assert full
-    // isWatertight) is always clean; the sliver only appears after union
-    // with the shell. It creates no hole and no non-manifold edge, so a
-    // slicer silently discards it -- it doesn't affect printability.
+    // extruded standalone (see pixelIcons.test.ts, which does assert this
+    // same openEdge/nonManifold bar) is always clean; the sliver only
+    // appears after union with the shell. It creates no hole and no
+    // non-manifold edge, so a slicer silently discards it -- it doesn't
+    // affect printability.
     const { ICON_OPTIONS } = await import("../src/generators/icons.js");
     for (const icon of ICON_OPTIONS) {
       for (const legendMode of ["emboss", "engrave"] as const) {
@@ -788,8 +789,8 @@ describe("createKeycapMesh: legendKind 'icon' (emoji legend via the icon font)",
 
   it("an icon legend adds/removes material the same way a text legend does", async () => {
     const baseline = await createKeycapMesh({});
-    const embossedIcon = await createKeycapMesh({ legendText: "⭐", legendKind: "icon", legendMode: "emboss" });
-    const engravedIcon = await createKeycapMesh({ legendText: "⭐", legendKind: "icon", legendMode: "engrave" });
+    const embossedIcon = await createKeycapMesh({ legendText: "starFilled", legendKind: "icon", legendMode: "emboss" });
+    const engravedIcon = await createKeycapMesh({ legendText: "starFilled", legendKind: "icon", legendMode: "engrave" });
     expect(computeSignedVolume(embossedIcon)).toBeGreaterThan(computeSignedVolume(baseline));
     expect(computeSignedVolume(engravedIcon)).toBeLessThan(computeSignedVolume(baseline));
   });
@@ -841,7 +842,7 @@ describe("createKeycapMesh: legendBubble (speech-bubble plaque behind the legend
 
   it("works with an icon legend, both emboss and engrave", async () => {
     for (const legendMode of ["emboss", "engrave"] as const) {
-      const mesh = await createKeycapMesh({ legendText: "⭐", legendKind: "icon", legendMode, legendBubble: true });
+      const mesh = await createKeycapMesh({ legendText: "starFilled", legendKind: "icon", legendMode, legendBubble: true });
       const report = validateMesh(mesh);
       expect(report.isWatertight, legendMode).toBe(true);
       expect(report.degenerateTriangleCount, legendMode).toBe(0);
@@ -915,7 +916,7 @@ describe("createKeycapMeshParts: multi-color export (base/bubble/legend as separ
   });
 
   it("works with an icon legend too", async () => {
-    const parts = await createKeycapMeshParts({ legendText: "⭐", legendKind: "icon", legendMode: "emboss", legendBubble: true });
+    const parts = await createKeycapMeshParts({ legendText: "starFilled", legendKind: "icon", legendMode: "emboss", legendBubble: true });
     expect(parts.bubble).not.toBeNull();
     expect(parts.legend).not.toBeNull();
     expect(validateMesh(parts.legend!).isWatertight).toBe(true);

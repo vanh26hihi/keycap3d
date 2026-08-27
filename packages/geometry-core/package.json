@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./boolean": "./src/boolean.ts",
     "./keycap": "./src/generators/keycap.ts",
-    "./icons": "./src/generators/icons.ts"
+    "./icons": "./src/generators/icons.ts",
+    "./pixelIcons": "./src/generators/pixelIcons.ts"
   },
   "scripts": {
     "test": "vitest run",
