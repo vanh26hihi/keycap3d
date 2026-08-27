@@ -104,15 +104,21 @@ function heartTest(scale = 1): (u: number, v: number) => boolean {
   return unionTest(circles, body);
 }
 
-function chevronDownTest(): (u: number, v: number) => boolean {
-  return polygonTest([
-    [-0.85, 0.55],
-    [0, -0.65],
-    [0.85, 0.55],
-    [0.85, 0.05],
-    [0, -1.05],
-    [-0.85, 0.05],
+/** A solid downward arrow: a rectangular shaft plus a triangular head --
+ *  reads more clearly as "arrow down" at icon scale than a hollow chevron. */
+function arrowDownTest(): (u: number, v: number) => boolean {
+  const shaft = polygonTest([
+    [-0.3, 1.0],
+    [0.3, 1.0],
+    [0.3, -0.1],
+    [-0.3, -0.1],
   ]);
+  const head = polygonTest([
+    [-0.65, -0.1],
+    [0.65, -0.1],
+    [0, -1.0],
+  ]);
+  return unionTest(shaft, head);
 }
 
 function musicNoteTest(): (u: number, v: number) => boolean {
@@ -187,17 +193,15 @@ function flatMouth(): (u: number, v: number) => boolean {
   return (u, v) => Math.abs(v + 0.35) < 0.06 && Math.abs(u) < 0.4;
 }
 
-/** 5x7 pixel glyphs for the handful of characters used as their own icons
- *  ("HA HA", "Z", "?", "!", "$") -- these read as blocky retro pixel-font
- *  text in the reference image, unlike the smooth geometric icons above, so
- *  they're authored directly as bitmaps rather than sampled from a formula. */
+/** 5x7 pixel glyphs for the one bit of text drawn as a genuine blocky
+ *  bitmap -- "HA HA" is the only text-as-icon in the reference image that
+ *  actually reads as pixel-font/8-bit style; "Z"/"?"/"!"/"$" are clean
+ *  smooth typography there instead, so those are rendered straight from
+ *  the ordinary legend text font (see buildLegendMesh's fallback order in
+ *  keycap.ts) rather than duplicated here as cruder bitmaps. */
 const FONT_5X7: Record<string, string[]> = {
   H: ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
   A: [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-  Z: ["#####", "...##", "..##.", ".##..", "##...", "##...", "#####"],
-  "?": [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."],
-  "!": ["..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."],
-  $: ["..#..", ".####", "##...", ".###.", "...##", "####.", "..#.."],
 };
 
 function parseRows(rows: string[]): Grid {
@@ -240,10 +244,7 @@ export const PIXEL_ICON_GRIDS: Record<string, Grid> = {
   neutralFace: sampleShape(faceTest(flatMouth())),
   haha: HAHA_GRID,
   sparkle: sampleShape(starTest(4, 0.95, 0.32)),
-  // No plain "heart" outline variant, for the same reason "star" has none:
-  // the heart shape's one reflex point (the cleft between the two lobes)
-  // makes a uniformly-shrunk copy of itself pinch/self-touch there, which
-  // earcut can't reliably close into a solid across grid resolutions.
+  heart: sampleShape(outlineOf(heartTest(), 0.45)),
   heartFilled: sampleShape(heartTest()),
   brokenHeart: sampleShape((u, v) => heartTest()(u, v) && Math.abs(u - 0.12 * Math.sin(v * 6)) > 0.06),
   // No plain "star" outline variant: a uniformly-shrunk copy of a 5-point
@@ -257,12 +258,8 @@ export const PIXEL_ICON_GRIDS: Record<string, Grid> = {
     unionTest(starTest(4, 0.55, 0.18, 0), (u, v) => starTest(4, 0.3, 0.1)(u - 0.55, v + 0.5), (u, v) => starTest(4, 0.3, 0.1)(u + 0.55, v - 0.4)),
   ),
   music: sampleShape(musicNoteTest()),
-  dollar: glyph("$"),
   clover: sampleShape(cloverTest()),
-  arrowDown: sampleShape(chevronDownTest()),
-  sleepZ: glyph("Z"),
-  question: glyph("?"),
-  exclamation: glyph("!"),
+  arrowDown: sampleShape(arrowDownTest()),
   splash: sampleShape(burstTest(6)),
   infinity: sampleShape(infinityTest()),
   cross: sampleShape(crossTest()),

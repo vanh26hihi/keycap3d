@@ -6,6 +6,7 @@ import { createCubeMesh } from "../primitives/cube";
 import { createCylinderMesh } from "../primitives/cylinder";
 import { loftProfiles } from "./loft";
 import { layoutLegendIslands, type LegendAlign } from "./legendLayout";
+import { getLegendFont } from "./legendFont";
 import { getPixelIconGrid } from "./pixelIcons";
 import { pixelIconIslands } from "./pixelTrace";
 import { getIconFont } from "./iconFont";
@@ -464,18 +465,26 @@ function buildLegendMesh(
   const availableWidthMm = Math.max(topWidthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
   const availableLengthMm = Math.max(topLengthMm - 2 * LEGEND_EDGE_MARGIN_MM, 1);
   if (kind === "icon") {
-    // Pixel-art icons (see icons.ts) are looked up by their own short id;
-    // the legacy emoji-font icon set stores a literal Unicode character
-    // instead, which never collides with a pixel-icon id, so trying the
-    // pixel lookup first and falling back to the emoji font is enough to
-    // support both sets through the same `legendText` field.
+    // Three icon sources share the one `legendText` field, tried in order:
+    // 1. Pixel-art icons (see icons.ts) looked up by their own short id.
+    // 2. A handful of icons ("?", "!", "Z", "$") that are just a single
+    //    ordinary character, rendered from the same clean legend text font
+    //    a "text" legend uses -- the reference mockup draws these as
+    //    smooth typography, not blocky pixel art, so reusing the real font
+    //    glyph looks right where a hand-drawn low-res bitmap didn't.
+    // 3. The legacy emoji-font icon set, storing a literal Unicode
+    //    character. None of these three ever collide as lookup keys (a
+    //    pixel id, a single ASCII char, and a multi-byte emoji are always
+    //    distinguishable), so trying them in order is enough.
     const grid = getPixelIconGrid(text);
     if (grid) {
       const { islands } = pixelIconIslands(grid, targetCapHeightMm, availableWidthMm, availableLengthMm);
       if (islands.length === 0) return null;
       return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
     }
-    const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align, getIconFont());
+    const textFont = getLegendFont();
+    const font = [...text].length === 1 && textFont.charToGlyphIndex(text) !== 0 ? textFont : getIconFont();
+    const { islands } = layoutLegendIslands(text, targetCapHeightMm, availableWidthMm, availableLengthMm, align, font);
     if (islands.length === 0) return null;
     return mergeMeshes(islands.map((island) => extrudeGlyphIsland(island, bottomZ, topZ)));
   }

@@ -32,17 +32,24 @@ const PIXEL_ICON_OPTIONS: IconOption[] = [
   { id: "neutralFace", char: "neutralFace", label: "Neutral face" },
   { id: "haha", char: "haha", label: "Haha" },
   { id: "sparkle", char: "sparkle", label: "Sparkle" },
+  { id: "heart", char: "heart", label: "Heart (outline)" },
   { id: "heartFilled", char: "heartFilled", label: "Heart" },
   { id: "brokenHeart", char: "brokenHeart", label: "Broken heart" },
   { id: "starFilled", char: "starFilled", label: "Star" },
   { id: "sparkleCluster", char: "sparkleCluster", label: "Sparkles" },
   { id: "music", char: "music", label: "Music note" },
-  { id: "dollar", char: "dollar", label: "Dollar" },
+  { id: "dollar", char: "$", label: "Dollar" },
   { id: "clover", char: "clover", label: "Clover" },
   { id: "arrowDown", char: "arrowDown", label: "Arrow down" },
-  { id: "sleepZ", char: "sleepZ", label: "Sleep (Z)" },
-  { id: "question", char: "question", label: "Question" },
-  { id: "exclamation", char: "exclamation", label: "Exclamation" },
+  // "sleepZ"/"question"/"exclamation"/"dollar" (below) are rendered from
+  // the ordinary legend TEXT font instead of a pixel bitmap -- see
+  // buildLegendMesh's fallback order in keycap.ts. The reference mockup
+  // draws these as clean, smooth typography (unlike "haha", which is
+  // genuinely blocky pixel-font style there), so a hand-drawn low-res
+  // bitmap looked visibly cruder than just reusing the real font glyph.
+  { id: "sleepZ", char: "Z", label: "Sleep (Z)" },
+  { id: "question", char: "?", label: "Question" },
+  { id: "exclamation", char: "!", label: "Exclamation" },
   { id: "splash", char: "splash", label: "Splash" },
   { id: "infinity", char: "infinity", label: "Infinity" },
   { id: "cross", char: "cross", label: "Cross" },

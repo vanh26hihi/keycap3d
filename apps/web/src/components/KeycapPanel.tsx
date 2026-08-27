@@ -208,6 +208,7 @@ const ICON_LABELS_VI: Record<string, string> = {
   neutralFace: "Mặt bình thường",
   haha: "Haha",
   sparkle: "Lấp lánh",
+  heart: "Trái tim (viền)",
   heartFilled: "Trái tim",
   brokenHeart: "Trái tim vỡ",
   starFilled: "Ngôi sao",

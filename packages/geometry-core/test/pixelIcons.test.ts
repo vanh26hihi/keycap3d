@@ -6,10 +6,13 @@ import { extrudeGlyphIsland } from "../src/generators/glyphExtrude.js";
 import { mergeMeshes, computeSignedVolume } from "../src/mesh.js";
 import { validateMesh } from "../src/validate.js";
 
-// ICON_OPTIONS also includes the restored legacy emoji-font icons (id
-// prefixed "legacy"), which have no pixel grid at all by design -- those
-// are covered separately by iconFont.test.ts instead.
-const PIXEL_ICON_OPTIONS = ICON_OPTIONS.filter((icon) => !icon.id.startsWith("legacy"));
+// ICON_OPTIONS also includes icons with no pixel grid by design: the
+// restored legacy emoji-font icons (id prefixed "legacy", covered by
+// iconFont.test.ts instead), and a few single-character icons ("?", "!",
+// "Z", "$") rendered from the ordinary legend text font instead of a
+// bitmap (see buildLegendMesh's fallback order in keycap.ts).
+const TEXT_FONT_ICON_IDS = new Set(["sleepZ", "question", "exclamation", "dollar"]);
+const PIXEL_ICON_OPTIONS = ICON_OPTIONS.filter((icon) => !icon.id.startsWith("legacy") && !TEXT_FONT_ICON_IDS.has(icon.id));
 
 describe("pixel icons: every curated icon has a grid and extrudes cleanly", () => {
   for (const icon of PIXEL_ICON_OPTIONS) {
