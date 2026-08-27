@@ -5,6 +5,7 @@ import { DEFAULT_KEYCAP_PARAMS, maxFlushSocketDepthMm, type KeycapParams } from 
 import { ICON_OPTIONS } from "@keycap-web/geometry-core/icons";
 import { useEditorStore } from "../state/store";
 import { loadSavedDefaultParams, saveDefaultParams } from "../lib/keycapDefaults";
+import { PRINT_BED_WIDTH_MM } from "../lib/printBed";
 
 function NumberField({
   fieldKey,
@@ -268,14 +269,6 @@ function IconGrid({ value, onSelect }: { value: string; onSelect: (char: string)
   );
 }
 
-/** Typical FDM bed width, mm (Bambu/Prusa-class printers) -- used only to
- *  decide when the Legend field's batch-create-per-word flow should wrap
- *  into a new row instead of laying keycaps out in one ever-longer line.
- *  Not a real per-printer setting (this app has no bed-size concept yet),
- *  just a reasonable wrap point so a long phrase doesn't produce keycaps
- *  spaced 500mm out from the origin. */
-const BED_WIDTH_MM = 220;
-
 const SELECT_STYLE = {
   background: "#14171a",
   border: "1px solid #3a3f47",
@@ -300,7 +293,9 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
   const status = useEditorStore((s) => s.keycapStatus);
   const error = useEditorStore((s) => s.keycapError);
   const addKeycapNode = useEditorStore((s) => s.addKeycapNode);
-  const nodePosition = useEditorStore((s) => s.project.nodes[nodeId]?.designTransform.position);
+  const node = useEditorStore((s) => s.project.nodes[nodeId]);
+  const updateNodeTransformDirect = useEditorStore((s) => s.updateNodeTransformDirect);
+  const commitTransform = useEditorStore((s) => s.commitTransform);
 
   const commit = (partial: Partial<KeycapParams>) => void updateKeycapParams(nodeId, partial);
 
@@ -327,19 +322,35 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
     }
     commit({ legendText: words[0] });
     const gapMm = 2;
-    const basePosition = nodePosition ?? [0, 0, 0];
-    // Wraps into rows once a row would run wider than a typical FDM bed
-    // (220mm -- Bambu/Prusa-class printers) instead of laying every word
-    // out in one ever-longer line, the same way you'd actually arrange
-    // separate parts on a real print bed.
-    const maxPerRow = Math.max(1, Math.floor(BED_WIDTH_MM / (params.widthMm + gapMm)));
-    words.slice(1).forEach((word, i) => {
-      const index = i + 1; // index 0 is the original keycap, left where it is
+    const basePosition = node?.designTransform.position ?? [0, 0, 0];
+    // Wraps into rows once a row would run wider than the P2S's actual bed
+    // (256mm) instead of laying every word out in one ever-longer line, the
+    // same way you'd actually arrange separate parts on a real print bed.
+    const maxPerRow = Math.max(1, Math.floor(PRINT_BED_WIDTH_MM / (params.widthMm + gapMm)));
+    const rowCount = Math.ceil(words.length / maxPerRow);
+    const colCount = Math.min(words.length, maxPerRow);
+    // The WHOLE cluster (including the original keycap at index 0) is
+    // centered on basePosition rather than growing purely in +X/+Y from
+    // it -- growing one-directionally means even a modest word count can
+    // push well past the bed edge in that one direction while leaving the
+    // opposite side of the bed completely unused.
+    const gridWidthMm = (colCount - 1) * (params.widthMm + gapMm);
+    const gridHeightMm = (rowCount - 1) * (params.lengthMm + gapMm);
+    const startX = basePosition[0] - gridWidthMm / 2;
+    const startY = basePosition[1] + gridHeightMm / 2;
+
+    words.forEach((word, index) => {
       const col = index % maxPerRow;
       const row = Math.floor(index / maxPerRow);
-      const offsetX = (params.widthMm + gapMm) * col;
-      const offsetY = (params.lengthMm + gapMm) * row;
-      void addKeycapNode({ ...params, legendText: word }, [basePosition[0] + offsetX, basePosition[1] + offsetY, basePosition[2]]);
+      const position: [number, number, number] = [startX + col * (params.widthMm + gapMm), startY - row * (params.lengthMm + gapMm), basePosition[2]];
+      if (index === 0) {
+        if (!node) return;
+        const nextTransform = { ...node.designTransform, position };
+        updateNodeTransformDirect(nodeId, nextTransform);
+        commitTransform(nodeId, node.designTransform);
+      } else {
+        void addKeycapNode({ ...params, legendText: word }, position);
+      }
     });
   };
 

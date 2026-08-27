@@ -3,9 +3,10 @@
 import { useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { GizmoHelper, GizmoViewport, OrbitControls, TransformControls } from "@react-three/drei";
-import { DoubleSide, PlaneGeometry, type Group } from "three";
+import { BufferGeometry, DoubleSide, Float32BufferAttribute, PlaneGeometry, type Group } from "three";
 import { meshBufferToBufferGeometry, type Transform } from "@keycap-web/geometry-core";
 import { useEditorStore } from "../state/store";
+import { PRINT_BED_WIDTH_MM, PRINT_BED_DEPTH_MM } from "../lib/printBed";
 
 function degToRad(d: number): number {
   return (d * Math.PI) / 180;
@@ -216,6 +217,46 @@ function SplitPlaneGizmo() {
   );
 }
 
+/**
+ * The user's actual printer bed (256 x 256mm, Bambu Lab P2S -- see
+ * lib/printBed.ts), rendered as a subtle plate plus a bright outline so
+ * it's visually obvious when an arrangement (e.g. the Legend field's
+ * batch-create-per-word grid) exceeds the real usable area -- the
+ * GridHelper below this is a generic, unbounded ruler with no marked edge,
+ * which is exactly what made "did this spill off the bed?" impossible to
+ * answer just by looking at the viewport.
+ */
+function BedPlate() {
+  const outlineGeometry = useMemo(() => {
+    const hw = PRINT_BED_WIDTH_MM / 2;
+    const hd = PRINT_BED_DEPTH_MM / 2;
+    // 4 independent segments (not a shared-vertex loop) to match the same
+    // <lineSegments> + plain position-attribute pattern already used for
+    // the split-plane gizmo's edge outline elsewhere in this file.
+    const points = new Float32Array([
+      -hw, -hd, 0, hw, -hd, 0,
+      hw, -hd, 0, hw, hd, 0,
+      hw, hd, 0, -hw, hd, 0,
+      -hw, hd, 0, -hw, -hd, 0,
+    ]);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new Float32BufferAttribute(points, 3));
+    return geometry;
+  }, []);
+
+  return (
+    <group>
+      <mesh position={[0, 0, -0.05]}>
+        <planeGeometry args={[PRINT_BED_WIDTH_MM, PRINT_BED_DEPTH_MM]} />
+        <meshBasicMaterial color="#2a2e33" transparent opacity={0.35} side={DoubleSide} depthWrite={false} />
+      </mesh>
+      <lineSegments geometry={outlineGeometry}>
+        <lineBasicMaterial color="#e0954f" />
+      </lineSegments>
+    </group>
+  );
+}
+
 export function Viewport() {
   const order = useEditorStore((s) => s.project.order);
   const select = useEditorStore((s) => s.select);
@@ -241,12 +282,15 @@ export function Viewport() {
       <directionalLight position={[100, 150, 100]} intensity={1.2} />
       <directionalLight position={[-100, 60, -80]} intensity={0.4} />
 
-      {/* 10mm grid cells, 200mm span -- a visual mm ruler for the print-bed-sized
-          scene. THREE.GridHelper lies in the XZ plane by default (matching
-          three's Y-up convention); rotated 90deg about X so it lies in the XY
-          plane instead, matching this app's Z-up convention (the grid
-          represents the print bed, which is the XY plane). */}
-      <gridHelper args={[200, 20, "#4a4f57", "#2c2f35"]} rotation={[Math.PI / 2, 0, 0]} />
+      {/* 16mm grid cells spanning the real 256mm P2S bed -- a visual mm
+          ruler sized to match BedPlate's own outline below, not an
+          arbitrary round number. THREE.GridHelper lies in the XZ plane by
+          default (matching three's Y-up convention); rotated 90deg about X
+          so it lies in the XY plane instead, matching this app's Z-up
+          convention (the grid represents the print bed, which is the XY
+          plane). */}
+      <gridHelper args={[PRINT_BED_WIDTH_MM, PRINT_BED_WIDTH_MM / 16, "#4a4f57", "#2c2f35"]} rotation={[Math.PI / 2, 0, 0]} />
+      <BedPlate />
       <axesHelper args={[40]} />
 
       {order.map((id) => (
