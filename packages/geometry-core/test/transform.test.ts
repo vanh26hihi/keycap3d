@@ -5,6 +5,8 @@ import {
   applyTransformToMesh,
   composeExportMatrix,
   applyMatrixToMesh,
+  transformToMatrix4,
+  matrix4ToTransform,
   type Transform,
   type PrintTransform,
 } from "../src/transform.js";
@@ -86,5 +88,41 @@ describe("designTransform vs printTransform composition", () => {
     const box = computeBoundingBox(baked);
     // design scale of 3x must still take effect; print has no scale field to interfere
     expect(box.size[0]).toBeCloseTo(30, 4);
+  });
+});
+
+describe("matrix4ToTransform: the inverse of transformToMatrix4", () => {
+  it("round-trips an arbitrary transform through matrix4ToTransform(transformToMatrix4(t))", () => {
+    const t: Transform = { position: [12.5, -3, 40], rotationDeg: [15, -30, 60], scale: [1.5, 2, 0.75] };
+    const roundTripped = matrix4ToTransform(transformToMatrix4(t));
+    for (let i = 0; i < 3; i++) {
+      expect(roundTripped.position[i]).toBeCloseTo(t.position[i], 6);
+      expect(roundTripped.rotationDeg[i]).toBeCloseTo(t.rotationDeg[i], 4);
+      expect(roundTripped.scale[i]).toBeCloseTo(t.scale[i], 6);
+    }
+  });
+
+  it("round-trips the identity transform", () => {
+    const t: Transform = { position: [0, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] };
+    const roundTripped = matrix4ToTransform(transformToMatrix4(t));
+    expect(roundTripped.position).toEqual([0, 0, 0]);
+    expect(roundTripped.rotationDeg[0]).toBeCloseTo(0, 6);
+    expect(roundTripped.rotationDeg[1]).toBeCloseTo(0, 6);
+    expect(roundTripped.rotationDeg[2]).toBeCloseTo(0, 6);
+    expect(roundTripped.scale).toEqual([1, 1, 1]);
+  });
+
+  it("composing a delta matrix with a node's own matrix moves it by the delta -- the technique the group gizmo relies on", () => {
+    // Simulates: pivot moves by [10, 5, 0], a node offset from the pivot
+    // should end up shifted by the same delta, keeping its own rotation.
+    const nodeTransform: Transform = { position: [3, 4, 0], rotationDeg: [0, 0, 45], scale: [1, 1, 1] };
+    const deltaTransform: Transform = { position: [10, 5, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] };
+    const nodeMatrix = transformToMatrix4(nodeTransform);
+    const deltaMatrix = transformToMatrix4(deltaTransform);
+    const result = matrix4ToTransform(deltaMatrix.clone().multiply(nodeMatrix));
+    expect(result.position[0]).toBeCloseTo(13, 6);
+    expect(result.position[1]).toBeCloseTo(9, 6);
+    expect(result.position[2]).toBeCloseTo(0, 6);
+    expect(result.rotationDeg[2]).toBeCloseTo(45, 4); // rotation preserved, delta had none
   });
 });

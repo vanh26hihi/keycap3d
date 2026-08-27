@@ -7,6 +7,7 @@ function resetStore() {
   useEditorStore.setState({
     project: emptyProjectState(),
     selectedId: null,
+    selectedIds: [],
     transformMode: "translate",
     past: [],
     future: [],
@@ -209,6 +210,137 @@ describe("delete", () => {
     useEditorStore.getState().undo();
     expect(useEditorStore.getState().project.order).toEqual([a, b, c]);
     expect(useEditorStore.getState().project.nodes[b].name).toBe("B");
+  });
+});
+
+describe("multi-select: selectedIds / toggleSelect", () => {
+  it("select(id) replaces the whole selection with just that node", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    useEditorStore.getState().select(null); // addMeshNode auto-selects each new node -- start from a clean slate
+    useEditorStore.getState().toggleSelect(a);
+    useEditorStore.getState().toggleSelect(b);
+    expect(useEditorStore.getState().selectedIds).toEqual([a, b]);
+
+    useEditorStore.getState().select(a);
+    expect(useEditorStore.getState().selectedIds).toEqual([a]);
+    expect(useEditorStore.getState().selectedId).toBe(a);
+  });
+
+  it("select(null) clears the whole selection", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    useEditorStore.getState().select(null);
+    expect(useEditorStore.getState().selectedIds).toEqual([]);
+    expect(useEditorStore.getState().selectedId).toBeNull();
+    void a;
+  });
+
+  it("toggleSelect adds nodes to the selection in click order, and selectedId tracks the last one toggled in", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    const c = store.addMeshNode(createCubeMesh(10, 10, 10), "C");
+    useEditorStore.getState().select(null);
+
+    useEditorStore.getState().toggleSelect(a);
+    useEditorStore.getState().toggleSelect(c);
+    useEditorStore.getState().toggleSelect(b);
+    expect(useEditorStore.getState().selectedIds).toEqual([a, c, b]);
+    expect(useEditorStore.getState().selectedId).toBe(b);
+  });
+
+  it("toggleSelect on an already-selected node removes it, and selectedId falls back to the new last one", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    useEditorStore.getState().select(null);
+    useEditorStore.getState().toggleSelect(a);
+    useEditorStore.getState().toggleSelect(b);
+
+    useEditorStore.getState().toggleSelect(b);
+    expect(useEditorStore.getState().selectedIds).toEqual([a]);
+    expect(useEditorStore.getState().selectedId).toBe(a);
+
+    useEditorStore.getState().toggleSelect(a);
+    expect(useEditorStore.getState().selectedIds).toEqual([]);
+    expect(useEditorStore.getState().selectedId).toBeNull();
+  });
+
+  it("removeNode drops the removed node out of selectedIds even when it wasn't the primary selectedId", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    useEditorStore.getState().select(null);
+    useEditorStore.getState().toggleSelect(a);
+    useEditorStore.getState().toggleSelect(b); // b is primary
+
+    useEditorStore.getState().removeNode(a);
+    expect(useEditorStore.getState().selectedIds).toEqual([b]);
+    expect(useEditorStore.getState().selectedId).toBe(b); // unaffected, a wasn't primary
+  });
+});
+
+describe("commitBatchTransform: multi-select group move", () => {
+  it("moves several nodes as one undo step", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A", { position: [0, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B", { position: [20, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+    const historyBefore = useEditorStore.getState().past.length;
+
+    const prevA = useEditorStore.getState().project.nodes[a].designTransform;
+    const prevB = useEditorStore.getState().project.nodes[b].designTransform;
+    useEditorStore.getState().updateNodeTransformDirect(a, { position: [5, 5, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+    useEditorStore.getState().updateNodeTransformDirect(b, { position: [25, 5, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+    // per-frame direct writes must not touch history, same as the single-node path
+    expect(useEditorStore.getState().past.length).toBe(historyBefore);
+
+    useEditorStore.getState().commitBatchTransform([
+      { id: a, prev: prevA },
+      { id: b, prev: prevB },
+    ]);
+    expect(useEditorStore.getState().past.length).toBe(historyBefore + 1); // ONE undo step for both
+
+    expect(useEditorStore.getState().project.nodes[a].designTransform.position).toEqual([5, 5, 0]);
+    expect(useEditorStore.getState().project.nodes[b].designTransform.position).toEqual([25, 5, 0]);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().project.nodes[a].designTransform.position).toEqual([0, 0, 0]);
+    expect(useEditorStore.getState().project.nodes[b].designTransform.position).toEqual([20, 0, 0]);
+  });
+
+  it("skips a node in the batch that didn't actually move, without breaking the others", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A", { position: [0, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B", { position: [20, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+    const prevA = useEditorStore.getState().project.nodes[a].designTransform;
+    const prevB = useEditorStore.getState().project.nodes[b].designTransform;
+    // only move A; B stays exactly where it was
+    useEditorStore.getState().updateNodeTransformDirect(a, { position: [9, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+
+    useEditorStore.getState().commitBatchTransform([
+      { id: a, prev: prevA },
+      { id: b, prev: prevB },
+    ]);
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().project.nodes[a].designTransform.position).toEqual([0, 0, 0]);
+    expect(useEditorStore.getState().project.nodes[b].designTransform.position).toEqual([20, 0, 0]);
+  });
+
+  it("a batch where NOTHING actually moved pushes no history entry at all", () => {
+    const store = useEditorStore.getState();
+    const a = store.addMeshNode(createCubeMesh(10, 10, 10), "A");
+    const b = store.addMeshNode(createCubeMesh(10, 10, 10), "B");
+    const historyBefore = useEditorStore.getState().past.length;
+    const prevA = useEditorStore.getState().project.nodes[a].designTransform;
+    const prevB = useEditorStore.getState().project.nodes[b].designTransform;
+
+    useEditorStore.getState().commitBatchTransform([
+      { id: a, prev: prevA },
+      { id: b, prev: prevB },
+    ]);
+    expect(useEditorStore.getState().past.length).toBe(historyBefore);
   });
 });
 

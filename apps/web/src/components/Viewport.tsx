@@ -3,8 +3,8 @@
 import { useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { GizmoHelper, GizmoViewport, OrbitControls, TransformControls } from "@react-three/drei";
-import { BufferGeometry, DoubleSide, Float32BufferAttribute, PlaneGeometry, type Group } from "three";
-import { meshBufferToBufferGeometry, type Transform } from "@keycap-web/geometry-core";
+import { BufferGeometry, DoubleSide, Float32BufferAttribute, Matrix4, PlaneGeometry, type Group } from "three";
+import { meshBufferToBufferGeometry, transformToMatrix4, matrix4ToTransform, type Transform } from "@keycap-web/geometry-core";
 import { useEditorStore } from "../state/store";
 import { PRINT_BED_WIDTH_MM, PRINT_BED_DEPTH_MM } from "../lib/printBed";
 
@@ -45,8 +45,9 @@ function SceneNodeMesh({ id }: { id: string }) {
   // is always defined; the component un-mounts cleanly on the very next
   // parent render regardless.
   const node = useEditorStore((s) => s.project.nodes[id]);
-  const selectedId = useEditorStore((s) => s.selectedId);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
   const select = useEditorStore((s) => s.select);
+  const toggleSelect = useEditorStore((s) => s.toggleSelect);
   const transformMode = useEditorStore((s) => s.transformMode);
   const updateDirect = useEditorStore((s) => s.updateNodeTransformDirect);
   const commit = useEditorStore((s) => s.commitTransform);
@@ -61,7 +62,7 @@ function SceneNodeMesh({ id }: { id: string }) {
   const [group, setGroup] = useState<Group | null>(null);
   const dragStartTransform = useRef<Transform | null>(null);
 
-  const isSelected = selectedId === id;
+  const isSelected = selectedIds.includes(id);
   // While this node is being actively dragged, TransformControls owns its
   // Object3D's position/rotation/scale exclusively. If we keep passing them
   // as declarative props here, R3F re-applies (.set()s) them on every single
@@ -70,7 +71,7 @@ function SceneNodeMesh({ id }: { id: string }) {
   // bookkeeping. Passing `undefined` makes R3F skip setting that prop
   // entirely, leaving the object fully in TransformControls' hands until
   // the drag ends.
-  const isDragging = useEditorStore((s) => s.draggingNodeId === id);
+  const isDragging = useEditorStore((s) => s.draggingNodeId === id || s.draggingGroupIds.includes(id));
 
   const geometry = useMemo(() => (node ? meshBufferToBufferGeometry(node.mesh) : null), [node]);
 
@@ -95,7 +96,8 @@ function SceneNodeMesh({ id }: { id: string }) {
         scale={isDragging ? undefined : node.designTransform.scale}
         onClick={(e) => {
           e.stopPropagation();
-          select(id);
+          if (e.ctrlKey || e.metaKey || e.shiftKey) toggleSelect(id);
+          else select(id);
         }}
       >
         <mesh geometry={geometry}>
@@ -122,7 +124,7 @@ function SceneNodeMesh({ id }: { id: string }) {
           />
         </mesh>
       </group>
-      {isSelected && group && !splitActive && (
+      {isSelected && selectedIds.length === 1 && group && !splitActive && (
         <TransformControls
           object={group}
           mode={transformMode}
@@ -144,6 +146,102 @@ function SceneNodeMesh({ id }: { id: string }) {
               dragStartTransform.current = null;
             }
             setDraggingNode(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Multi-select group move/rotate/scale: renders one TransformControls
+ * attached to an invisible pivot group (centroid of the selected nodes'
+ * own positions) instead of any one node's own group -- moving/rotating
+ * the pivot recomputes each selected node's own transform via a delta
+ * matrix (composing the pivot's drag-start-to-current delta with each
+ * node's OWN matrix at drag start), which is what actually keeps every
+ * object's position relative to the others -- an approach that works
+ * identically for translate/rotate/scale since it's just matrix
+ * composition, not bespoke math per gizmo mode.
+ *
+ * Deliberately does NOT reparent objects in three's scene graph (the more
+ * "obvious" way to get free composition from three.js itself): R3F owns
+ * the declarative scene graph, and imperatively reattaching nodes mid-drag
+ * while React also re-renders that same structure is a correctness
+ * minefield this matrix approach sidesteps entirely.
+ */
+function MultiSelectGizmo() {
+  const selectedIds = useEditorStore((s) => s.selectedIds);
+  const nodes = useEditorStore((s) => s.project.nodes);
+  const transformMode = useEditorStore((s) => s.transformMode);
+  const updateDirect = useEditorStore((s) => s.updateNodeTransformDirect);
+  const commitBatch = useEditorStore((s) => s.commitBatchTransform);
+  const setDraggingGroup = useEditorStore((s) => s.setDraggingGroup);
+  const splitActive = useEditorStore((s) => s.splitSession !== null);
+
+  const [pivotGroup, setPivotGroup] = useState<Group | null>(null);
+  const dragStart = useRef<{
+    pivotMatrixInverse: Matrix4;
+    nodeMatrices: Map<string, Matrix4>;
+    prevTransforms: Map<string, Transform>;
+  } | null>(null);
+
+  const selectedNodes = selectedIds.map((id) => nodes[id]).filter((n): n is NonNullable<typeof n> => !!n);
+
+  if (selectedNodes.length < 2 || splitActive) return null;
+
+  // Pivot = centroid of the selected nodes' own positions, computed fresh
+  // every render -- EXCEPT while actively dragging, where the pivot
+  // group's own live position/rotation/scale (as TransformControls is
+  // setting it every frame) must be left alone, the same
+  // don't-fight-the-gizmo reason SceneNodeMesh skips its declarative props
+  // during a single-node drag.
+  const isDragging = dragStart.current !== null;
+  const pivotPosition: [number, number, number] = selectedNodes
+    .reduce(
+      (acc, n) => [acc[0] + n.designTransform.position[0], acc[1] + n.designTransform.position[1], acc[2] + n.designTransform.position[2]] as [
+        number,
+        number,
+        number,
+      ],
+      [0, 0, 0] as [number, number, number],
+    )
+    .map((sum) => sum / selectedNodes.length) as [number, number, number];
+
+  return (
+    <>
+      <group ref={setPivotGroup} position={isDragging ? undefined : pivotPosition} />
+      {pivotGroup && (
+        <TransformControls
+          object={pivotGroup}
+          mode={transformMode}
+          onMouseDown={() => {
+            const pivotMatrix = new Matrix4().compose(pivotGroup.position, pivotGroup.quaternion, pivotGroup.scale);
+            const nodeMatrices = new Map<string, Matrix4>();
+            const prevTransforms = new Map<string, Transform>();
+            for (const n of selectedNodes) {
+              nodeMatrices.set(n.id, transformToMatrix4(n.designTransform));
+              prevTransforms.set(n.id, n.designTransform);
+            }
+            dragStart.current = { pivotMatrixInverse: pivotMatrix.clone().invert(), nodeMatrices, prevTransforms };
+            setDraggingGroup(selectedNodes.map((n) => n.id));
+          }}
+          onObjectChange={() => {
+            if (!dragStart.current) return;
+            const currentPivotMatrix = new Matrix4().compose(pivotGroup.position, pivotGroup.quaternion, pivotGroup.scale);
+            const deltaMatrix = currentPivotMatrix.clone().multiply(dragStart.current.pivotMatrixInverse);
+            for (const [nodeId, nodeMatrixAtStart] of dragStart.current.nodeMatrices) {
+              const newMatrix = deltaMatrix.clone().multiply(nodeMatrixAtStart);
+              updateDirect(nodeId, matrix4ToTransform(newMatrix));
+            }
+          }}
+          onMouseUp={() => {
+            if (dragStart.current) {
+              const updates = Array.from(dragStart.current.prevTransforms.entries()).map(([id, prev]) => ({ id, prev }));
+              commitBatch(updates);
+              dragStart.current = null;
+            }
+            setDraggingGroup([]);
           }}
         />
       )}
@@ -298,6 +396,7 @@ export function Viewport() {
       ))}
 
       <SplitPlaneGizmo />
+      <MultiSelectGizmo />
 
       {/*
         makeDefault registers this as `state.controls` -- drei's

@@ -9,6 +9,7 @@ import {
 } from "@keycap-web/geometry-core";
 import {
   addNodeCommand,
+  batchCommand,
   duplicateNodeCommand,
   removeNodeCommand,
   renameNodeCommand,
@@ -52,7 +53,19 @@ const MAX_HISTORY = 200;
 
 export interface EditorStore {
   project: ProjectState;
+  /** The "primary" selection -- the last node clicked/toggled, whether it's
+   *  the only one selected or one of several. Every pre-multi-select code
+   *  path (panels that show one node's own detail) keys off this field
+   *  unchanged; `selectedIds` is the ADDITIONAL full selection set for
+   *  multi-select features (batch param edit, group move). */
   selectedId: string | null;
+  /** Full multi-selection, in click order. Empty when nothing is selected;
+   *  a single-element array in the common single-select case (kept in sync
+   *  with `selectedId`, which always equals `selectedIds[selectedIds.length
+   *  - 1]` when non-empty). Multi-select-aware UI (the group gizmo, batch
+   *  keycap param editing) reads this; everything else can ignore it and
+   *  keep using `selectedId` exactly as before. */
+  selectedIds: string[];
   transformMode: TransformMode;
   past: Command[];
   future: Command[];
@@ -69,6 +82,12 @@ export interface EditorStore {
    * mid-drag) rather than a TransformControls or coordinate-conversion bug.
    */
   draggingNodeId: string | null;
+  /** Same idea as `draggingNodeId`, for the multi-select group gizmo: every
+   *  node being moved together as a group needs to skip its own declarative
+   *  position/rotation/scale re-apply while `updateNodeTransformDirect` is
+   *  being called on it every drag frame -- a single id isn't enough once
+   *  more than one node moves at once. */
+  draggingGroupIds: string[];
   /** Same fighting-declarative-props problem as `draggingNodeId`, for the
    *  M3 split plane gizmo instead of a node gizmo. */
   splitPlaneDragging: boolean;
@@ -84,9 +103,18 @@ export interface EditorStore {
   splitStatus: SplitStatus;
   splitError: string | null;
 
+  /** Replaces the ENTIRE selection with just this one node (or clears it,
+   *  for `null`) -- a plain click, matching every existing single-select
+   *  call site's expectation unchanged. */
   select(id: string | null): void;
+  /** Ctrl/Cmd-click: adds `id` to the selection if it isn't already
+   *  selected, or removes it if it is. The new/remaining last-toggled-in
+   *  node becomes the new `selectedId` (primary); removing the primary
+   *  falls back to whatever's left in `selectedIds`, or null if none. */
+  toggleSelect(id: string): void;
   setTransformMode(mode: TransformMode): void;
   setDraggingNode(id: string | null): void;
+  setDraggingGroup(ids: string[]): void;
   setIsolated(id: string | null): void;
 
   execute(command: Command): void;
@@ -99,6 +127,11 @@ export interface EditorStore {
   updateNodeTransformDirect(id: string, transform: Transform): void;
   /** Pushes a single undo step comparing `prev` to the node's current transform. */
   commitTransform(id: string, prev: Transform): void;
+  /** Same idea as `commitTransform`, for the multi-select group gizmo: one
+   *  undo step covering every node the group drag actually moved (nodes
+   *  whose transform didn't change relative to their own `prev` are
+   *  skipped, same no-op-suppression as the single-node path). */
+  commitBatchTransform(updates: Array<{ id: string; prev: Transform }>): void;
 
   addMeshNode(mesh: MeshBuffer, name: string, transform?: Transform, origin?: NodeOrigin): string;
   removeNode(id: string): void;
@@ -122,8 +155,29 @@ export interface EditorStore {
    *  mesh, and pushes exactly one undo step. No-ops (no history entry) if
    *  the node isn't a keycap node or the merged params are unchanged. */
   updateKeycapParams(id: string, partial: Partial<KeycapParams>): Promise<void>;
+  /** Multi-select batch edit: merges `partial` into EACH listed node's own
+   *  current params individually (not a shared overwrite -- every node
+   *  keeps its own other fields, only the edited one changes uniformly
+   *  across all of them), regenerates every affected mesh, and commits all
+   *  the changes as ONE undo step. Ids with no keycap params, or whose
+   *  merged params come out unchanged, are silently skipped. */
+  updateKeycapParamsBatch(ids: string[], partial: Partial<KeycapParams>): Promise<void>;
   keycapStatus: "idle" | "generating" | "error";
   keycapError: string | null;
+}
+
+function transformsEqual(a: Transform, b: Transform): boolean {
+  return (
+    a.position[0] === b.position[0] &&
+    a.position[1] === b.position[1] &&
+    a.position[2] === b.position[2] &&
+    a.rotationDeg[0] === b.rotationDeg[0] &&
+    a.rotationDeg[1] === b.rotationDeg[1] &&
+    a.rotationDeg[2] === b.rotationDeg[2] &&
+    a.scale[0] === b.scale[0] &&
+    a.scale[1] === b.scale[1] &&
+    a.scale[2] === b.scale[2]
+  );
 }
 
 function nextId(): string {
@@ -146,10 +200,12 @@ function planeSizeForNode(node: SceneNodeState): number {
 export const useEditorStore = create<EditorStore>((set, get) => ({
   project: emptyProjectState(),
   selectedId: null,
+  selectedIds: [],
   transformMode: "translate",
   past: [],
   future: [],
   draggingNodeId: null,
+  draggingGroupIds: [],
   splitPlaneDragging: false,
   isolatedNodeId: null,
   splitSession: null,
@@ -159,7 +215,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   keycapError: null,
 
   select(id) {
-    set({ selectedId: id });
+    set({ selectedId: id, selectedIds: id ? [id] : [] });
+  },
+
+  toggleSelect(id) {
+    set((s) => {
+      const already = s.selectedIds.includes(id);
+      const selectedIds = already ? s.selectedIds.filter((existing) => existing !== id) : [...s.selectedIds, id];
+      const selectedId = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null;
+      return { selectedIds, selectedId };
+    });
   },
 
   setTransformMode(mode) {
@@ -168,6 +233,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setDraggingNode(id) {
     set({ draggingNodeId: id });
+  },
+
+  setDraggingGroup(ids) {
+    set({ draggingGroupIds: ids });
   },
 
   setIsolated(id) {
@@ -225,20 +294,21 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const node = get().project.nodes[id];
     if (!node) return;
     const next = node.designTransform;
-    if (
-      prev.position[0] === next.position[0] &&
-      prev.position[1] === next.position[1] &&
-      prev.position[2] === next.position[2] &&
-      prev.rotationDeg[0] === next.rotationDeg[0] &&
-      prev.rotationDeg[1] === next.rotationDeg[1] &&
-      prev.rotationDeg[2] === next.rotationDeg[2] &&
-      prev.scale[0] === next.scale[0] &&
-      prev.scale[1] === next.scale[1] &&
-      prev.scale[2] === next.scale[2]
-    ) {
-      return; // no-op drag/edit, don't pollute history
-    }
+    if (transformsEqual(prev, next)) return; // no-op drag/edit, don't pollute history
     get().execute(setTransformCommand(id, prev, next));
+  },
+
+  commitBatchTransform(updates) {
+    const commands: Command[] = [];
+    for (const { id, prev } of updates) {
+      const node = get().project.nodes[id];
+      if (!node) continue;
+      const next = node.designTransform;
+      if (transformsEqual(prev, next)) continue; // this node didn't actually move -- skip it
+      commands.push(setTransformCommand(id, prev, next));
+    }
+    if (commands.length === 0) return; // nothing in the whole group actually moved
+    get().execute(batchCommand(commands, `Move ${commands.length} objects`));
   },
 
   addMeshNode(mesh, name, transform, origin) {
@@ -258,7 +328,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       parametric: null,
     };
     get().execute(addNodeCommand(node));
-    set({ selectedId: id });
+    set({ selectedId: id, selectedIds: [id] });
     return id;
   },
 
@@ -271,7 +341,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // commit or more).
     const command = removeNodeCommand(get().project, id);
     get().execute(command);
-    set((s) => (s.selectedId === id ? { selectedId: null } : s));
+    set((s) => {
+      const selectedIds = s.selectedIds.filter((existing) => existing !== id);
+      const selectedId = s.selectedId === id ? (selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null) : s.selectedId;
+      return { selectedIds, selectedId };
+    });
     if (get().isolatedNodeId === id) set({ isolatedNodeId: null });
     if (get().splitSession?.targetNodeId === id) set({ splitSession: null, splitStatus: "idle", splitError: null });
   },
@@ -281,7 +355,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const command = duplicateNodeCommand(get().project, id, newId);
     if (!command) return null;
     get().execute(command);
-    set({ selectedId: newId });
+    set({ selectedId: newId, selectedIds: [newId] });
     return newId;
   },
 
@@ -302,6 +376,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (!node) return;
     set({
       selectedId: nodeId,
+      selectedIds: [nodeId],
       splitSession: {
         targetNodeId: nodeId,
         plane: { position: worldBoundingBoxCenter(node), rotationDeg: [0, 0, 0] },
@@ -449,7 +524,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       };
 
       get().execute(splitCommand(get().project, session.targetNodeId, partANode, partBNode));
-      set({ splitStatus: "success", splitSession: null, selectedId: partAId });
+      set({ splitStatus: "success", splitSession: null, selectedId: partAId, selectedIds: [partAId] });
       if (get().isolatedNodeId === session.targetNodeId) set({ isolatedNodeId: null });
     } catch (err) {
       set({ splitStatus: "error", splitError: err instanceof Error ? err.message : String(err) });
@@ -487,7 +562,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         parametric: { generatorId: "keycapV1", params },
       };
       get().execute(addNodeCommand(node));
-      set({ selectedId: id, keycapStatus: "idle" });
+      set({ selectedId: id, selectedIds: [id], keycapStatus: "idle" });
       return id;
     } catch (err) {
       set({ keycapStatus: "error", keycapError: err instanceof Error ? err.message : String(err) });
@@ -513,6 +588,45 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         return;
       }
       get().execute(setKeycapParamsCommand(id, prevParams, current.mesh, nextParams, nextMesh));
+      set({ keycapStatus: "idle" });
+    } catch (err) {
+      set({ keycapStatus: "error", keycapError: err instanceof Error ? err.message : String(err) });
+    }
+  },
+
+  async updateKeycapParamsBatch(ids, partial) {
+    // Each node merges `partial` into ITS OWN current params -- not a
+    // shared overwrite -- so every other field a node already had stays
+    // exactly as it was; only the edited field moves in lockstep across
+    // the whole selection.
+    const targets = ids
+      .map((id) => {
+        const node = get().project.nodes[id];
+        if (!node || !node.parametric) return null;
+        const prevParams = node.parametric.params;
+        const nextParams: KeycapParams = resolveKeycapParams({ ...prevParams, ...partial });
+        if (JSON.stringify(prevParams) === JSON.stringify(nextParams)) return null; // no-op for this node
+        return { id, prevParams, prevMesh: node.mesh, nextParams };
+      })
+      .filter((t): t is { id: string; prevParams: KeycapParams; prevMesh: MeshBuffer; nextParams: KeycapParams } => t !== null);
+
+    if (targets.length === 0) return;
+
+    set({ keycapStatus: "generating", keycapError: null });
+    try {
+      const nextMeshes = await Promise.all(targets.map((t) => createKeycapMesh(t.nextParams)));
+      const commands: Command[] = [];
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        // Re-read: a node might have been deleted/changed while these (async,
+        // parallel) generators were running.
+        const current = get().project.nodes[t.id];
+        if (!current || !current.parametric) continue;
+        commands.push(setKeycapParamsCommand(t.id, t.prevParams, current.mesh, t.nextParams, nextMeshes[i]));
+      }
+      if (commands.length > 0) {
+        get().execute(batchCommand(commands, `Edit ${commands.length} keycaps`));
+      }
       set({ keycapStatus: "idle" });
     } catch (err) {
       set({ keycapStatus: "error", keycapError: err instanceof Error ? err.message : String(err) });

@@ -205,6 +205,30 @@ export function setKeycapParamsCommand(
   };
 }
 
+/**
+ * Combines several already-constructed commands into one atomic undo step
+ * -- for multi-select batch edits (move N objects together, or apply the
+ * same keycap param to N selected keycaps) so "Undo" reverses the whole
+ * batch in one press instead of N presses. Reuses each individual
+ * command's own do/undo rather than re-deriving batch logic, so a batch of
+ * (say) setTransformCommand instances behaves identically to applying them
+ * one at a time -- just atomically. Undoes in reverse order, the generally
+ * correct convention for undoing a sequence of operations (though here
+ * each command targets a distinct, independent node, so order doesn't
+ * actually matter for correctness).
+ */
+export function batchCommand(commands: Command[], label = "Batch edit"): Command {
+  return {
+    label,
+    do(state) {
+      return commands.reduce((s, cmd) => cmd.do(s), state);
+    },
+    undo(state) {
+      return [...commands].reverse().reduce((s, cmd) => cmd.undo(s), state);
+    },
+  };
+}
+
 function cloneMeshBuffer(mesh: MeshBuffer): MeshBuffer {
   return {
     positions: mesh.positions.slice(),

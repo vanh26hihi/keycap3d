@@ -6,8 +6,9 @@ import { useEditorStore } from "../state/store";
 export function SceneTreePanel() {
   const order = useEditorStore((s) => s.project.order);
   const nodes = useEditorStore((s) => s.project.nodes);
-  const selectedId = useEditorStore((s) => s.selectedId);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
   const select = useEditorStore((s) => s.select);
+  const toggleSelect = useEditorStore((s) => s.toggleSelect);
   const setVisible = useEditorStore((s) => s.setVisible);
   const renameNode = useEditorStore((s) => s.renameNode);
   const isolatedNodeId = useEditorStore((s) => s.isolatedNodeId);
@@ -19,12 +20,14 @@ export function SceneTreePanel() {
 
   return (
     <div className="panel scene-tree" data-testid="scene-tree-panel">
-      <div className="panel-title">Đối tượng ({order.length})</div>
+      <div className="panel-title">
+        Đối tượng ({order.length}){selectedIds.length > 1 && <span> — đã chọn {selectedIds.length}</span>}
+      </div>
       <ul className="scene-tree-list">
         {order.map((id) => {
           const node = nodes[id];
           if (!node) return null;
-          const isSelected = id === selectedId;
+          const isSelected = selectedIds.includes(id);
           const isEditing = editingId === id;
           const isIsolated = isolatedNodeId === id;
           return (
@@ -33,7 +36,11 @@ export function SceneTreePanel() {
               className={`scene-tree-row${isSelected ? " selected" : ""}`}
               data-testid="scene-tree-row"
               data-node-id={id}
-              onClick={() => select(id)}
+              title="Ctrl/Cmd-click để chọn nhiều đối tượng cùng lúc"
+              onClick={(e) => {
+                if (e.ctrlKey || e.metaKey) toggleSelect(id);
+                else select(id);
+              }}
             >
               <button
                 type="button"

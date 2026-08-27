@@ -164,3 +164,43 @@ describe("M4 updateKeycapParams", () => {
     expect(after.size[2]).toBeCloseTo(before.size[2], 2);
   });
 });
+
+describe("updateKeycapParamsBatch: multi-select batch keycap param edit", () => {
+  it("applies the same param to every selected keycap as ONE undo step", async () => {
+    const a = await useEditorStore.getState().addKeycapNode({ heightMm: 10 });
+    const b = await useEditorStore.getState().addKeycapNode({ heightMm: 12 });
+    const historyBefore = useEditorStore.getState().past.length;
+
+    await useEditorStore.getState().updateKeycapParamsBatch([a, b], { widthMm: 20 });
+    expect(useEditorStore.getState().past.length).toBe(historyBefore + 1);
+
+    expect(useEditorStore.getState().project.nodes[a].parametric?.params.widthMm).toBeCloseTo(20, 6);
+    expect(useEditorStore.getState().project.nodes[b].parametric?.params.widthMm).toBeCloseTo(20, 6);
+    // each node's OWN other params (heightMm here) are preserved individually,
+    // not overwritten by whichever node happened to be "primary"
+    expect(useEditorStore.getState().project.nodes[a].parametric?.params.heightMm).toBeCloseTo(10, 6);
+    expect(useEditorStore.getState().project.nodes[b].parametric?.params.heightMm).toBeCloseTo(12, 6);
+
+    await useEditorStore.getState().undo();
+    expect(useEditorStore.getState().project.nodes[a].parametric?.params.widthMm).not.toBeCloseTo(20, 6);
+    expect(useEditorStore.getState().project.nodes[b].parametric?.params.widthMm).not.toBeCloseTo(20, 6);
+  });
+
+  it("silently skips ids with no keycap params (e.g. a plain imported mesh) without crashing", async () => {
+    const { createCubeMesh } = await import("@keycap-web/geometry-core");
+    const keycapId = await useEditorStore.getState().addKeycapNode();
+    const cubeId = useEditorStore.getState().addMeshNode(createCubeMesh(18, 18, 10), "Cube");
+
+    await useEditorStore.getState().updateKeycapParamsBatch([keycapId, cubeId], { widthMm: 22 });
+    expect(useEditorStore.getState().project.nodes[keycapId].parametric?.params.widthMm).toBeCloseTo(22, 6);
+    // the cube is untouched and still has no parametric data
+    expect(useEditorStore.getState().project.nodes[cubeId].parametric).toBeNull();
+  });
+
+  it("a batch where every node's merged params come out unchanged pushes no history entry", async () => {
+    const a = await useEditorStore.getState().addKeycapNode({ widthMm: 18.5 });
+    const historyBefore = useEditorStore.getState().past.length;
+    await useEditorStore.getState().updateKeycapParamsBatch([a], { widthMm: 18.5 });
+    expect(useEditorStore.getState().past.length).toBe(historyBefore);
+  });
+});

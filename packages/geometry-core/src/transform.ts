@@ -51,6 +51,26 @@ export function transformToMatrix4(t: Transform): Matrix4 {
   return matrix;
 }
 
+/**
+ * The inverse of `transformToMatrix4` -- decomposes a matrix back into a
+ * position/rotationDeg/scale Transform. Used by the multi-select group
+ * gizmo (Viewport.tsx): each selected node's new world matrix is computed
+ * by composing a drag-delta matrix with that node's own matrix at drag
+ * start, and the result needs to go back into the store's Transform shape.
+ */
+export function matrix4ToTransform(matrix: Matrix4): Transform {
+  const position = new Vector3();
+  const quaternion = new Quaternion();
+  const scale = new Vector3();
+  matrix.decompose(position, quaternion, scale);
+  const euler = new Euler().setFromQuaternion(quaternion, "XYZ");
+  return {
+    position: [position.x, position.y, position.z],
+    rotationDeg: [MathUtils.radToDeg(euler.x), MathUtils.radToDeg(euler.y), MathUtils.radToDeg(euler.z)],
+    scale: [scale.x, scale.y, scale.z],
+  };
+}
+
 export function printTransformToMatrix4(t: PrintTransform): Matrix4 {
   return transformToMatrix4({ position: t.position, rotationDeg: t.rotationDeg, scale: [1, 1, 1] });
 }

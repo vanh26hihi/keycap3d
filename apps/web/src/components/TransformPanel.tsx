@@ -52,6 +52,8 @@ const AXIS_LABELS = ["X", "Y", "Z"] as const;
 
 export function TransformPanel() {
   const selectedId = useEditorStore((s) => s.selectedId);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
+  const nodes = useEditorStore((s) => s.project.nodes);
   const node = useEditorStore((s) => (s.selectedId ? s.project.nodes[s.selectedId] : null));
   const updateDirect = useEditorStore((s) => s.updateNodeTransformDirect);
   const commit = useEditorStore((s) => s.commitTransform);
@@ -75,6 +77,25 @@ export function TransformPanel() {
       volumeMm3: report.isWatertight ? Math.abs(report.signedVolumeMm3) : null,
     };
   }, [mesh]);
+
+  if (selectedIds.length > 1) {
+    const selectedNodes = selectedIds.map((id) => nodes[id]).filter((n): n is NonNullable<typeof n> => !!n);
+    const allKeycaps = selectedNodes.length > 0 && selectedNodes.every((n) => n.parametric);
+    const primary = selectedId ? nodes[selectedId] : null;
+    return (
+      <div className="panel transform-panel" data-testid="transform-panel">
+        <div className="panel-title">Đã chọn {selectedNodes.length} đối tượng</div>
+        <p className="empty-hint" style={{ marginBottom: 10 }}>
+          Kéo gizmo trong khung 3D để di chuyển/xoay/thu phóng cả nhóm cùng lúc.
+        </p>
+        {allKeycaps && primary?.parametric ? (
+          <KeycapPanel nodeId={selectedId!} params={primary.parametric.params} batchNodeIds={selectedIds} />
+        ) : (
+          <p className="empty-hint">Chỉ sửa thông số keycap hàng loạt được khi TẤT CẢ đối tượng đã chọn đều là keycap.</p>
+        )}
+      </div>
+    );
+  }
 
   if (!selectedId || !node) {
     return (

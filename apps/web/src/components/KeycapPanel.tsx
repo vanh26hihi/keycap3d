@@ -288,8 +288,23 @@ const SELECT_STYLE = {
  * field in the app, not a live-drag preview, so there's no need for a
  * debounce mechanism here.
  */
-export function KeycapPanel({ nodeId, params }: { nodeId: string; params: KeycapParams }) {
+export function KeycapPanel({
+  nodeId,
+  params,
+  batchNodeIds,
+}: {
+  nodeId: string;
+  params: KeycapParams;
+  /** When set (multi-select, 2+ keycaps all selected), every field commit
+   *  applies to ALL of these node ids at once (as one undo step) instead of
+   *  just `nodeId` -- `nodeId`'s own current params (the `params` prop) are
+   *  what the fields DISPLAY, but committing a change merges it into each
+   *  listed node's own individual params, not overwriting them wholesale
+   *  with the primary node's values. */
+  batchNodeIds?: string[];
+}) {
   const updateKeycapParams = useEditorStore((s) => s.updateKeycapParams);
+  const updateKeycapParamsBatch = useEditorStore((s) => s.updateKeycapParamsBatch);
   const status = useEditorStore((s) => s.keycapStatus);
   const error = useEditorStore((s) => s.keycapError);
   const addKeycapNode = useEditorStore((s) => s.addKeycapNode);
@@ -297,7 +312,9 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
   const updateNodeTransformDirect = useEditorStore((s) => s.updateNodeTransformDirect);
   const commitTransform = useEditorStore((s) => s.commitTransform);
 
-  const commit = (partial: Partial<KeycapParams>) => void updateKeycapParams(nodeId, partial);
+  const isBatch = !!batchNodeIds && batchNodeIds.length > 1;
+  const commit = (partial: Partial<KeycapParams>) =>
+    void (isBatch ? updateKeycapParamsBatch(batchNodeIds!, partial) : updateKeycapParams(nodeId, partial));
 
   /**
    * Space-separated words in the Legend text field spawn one keycap PER
@@ -311,6 +328,14 @@ export function KeycapPanel({ nodeId, params }: { nodeId: string; params: Keycap
    * actually more than one word to split.
    */
   const commitLegendText = (value: string) => {
+    // In batch-edit mode (multiple keycaps already selected), space-splitting
+    // into new keycaps would be a confusing second "create more keycaps"
+    // feature layered on top of "edit the ones I already selected" -- just
+    // set every selected keycap's legendText to exactly what was typed.
+    if (isBatch) {
+      commit({ legendText: value });
+      return;
+    }
     const words = value
       .trim()
       .split(/[ \t]+/)
