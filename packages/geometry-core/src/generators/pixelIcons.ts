@@ -162,6 +162,26 @@ function burstTest(petals: number): (u: number, v: number) => boolean {
   return unionTest(...tests);
 }
 
+/** A classic light-bulb/idea silhouette: round glass, a short flared neck,
+ *  and a screw-thread base (two thin notches cut into the base block). */
+function bulbTest(): (u: number, v: number) => boolean {
+  const glass = circleTest(0, 0.22, 0.5);
+  const neck = polygonTest([
+    [-0.24, 0.05],
+    [0.24, 0.05],
+    [0.3, -0.22],
+    [-0.3, -0.22],
+  ]);
+  const base = polygonTest([
+    [-0.3, -0.22],
+    [0.3, -0.22],
+    [0.26, -0.62],
+    [-0.26, -0.62],
+  ]);
+  const threadGap = (u: number, v: number) => Math.abs(u) < 0.28 && (Math.abs(v + 0.34) < 0.035 || Math.abs(v + 0.48) < 0.035);
+  return (u, v) => (glass(u, v) || neck(u, v) || base(u, v)) && !threadGap(u, v);
+}
+
 /** Two overlapping circle outlines side by side -- an approximate figure-8 /
  *  infinity symbol, close enough at icon scale to read clearly. */
 function infinityTest(): (u: number, v: number) => boolean {
@@ -260,6 +280,7 @@ export const PIXEL_ICON_GRIDS: Record<string, Grid> = {
   // sidesteps the whole problem and is the more prominent treatment in the
   // reference image anyway (the bold row-4 star, not the thin outline one).
   starFilled: sampleShape(starTest(5, 0.95, 0.42)),
+  bulb: sampleShape(bulbTest()),
   sparkleCluster: sampleShape(
     unionTest(starTest(4, 0.55, 0.18, 0), (u, v) => starTest(4, 0.3, 0.1)(u - 0.55, v + 0.5), (u, v) => starTest(4, 0.3, 0.1)(u + 0.55, v - 0.4)),
   ),

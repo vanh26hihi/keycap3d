@@ -36,6 +36,7 @@ const PIXEL_ICON_OPTIONS: IconOption[] = [
   { id: "heartFilled", char: "heartFilled", label: "Heart" },
   { id: "brokenHeart", char: "brokenHeart", label: "Broken heart" },
   { id: "starFilled", char: "starFilled", label: "Star" },
+  { id: "bulb", char: "bulb", label: "Bulb / idea" },
   { id: "sparkleCluster", char: "sparkleCluster", label: "Sparkles" },
   { id: "music", char: "music", label: "Music note" },
   { id: "dollar", char: "$", label: "Dollar" },

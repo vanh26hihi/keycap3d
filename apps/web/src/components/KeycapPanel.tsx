@@ -212,6 +212,7 @@ const ICON_LABELS_VI: Record<string, string> = {
   heartFilled: "Trái tim",
   brokenHeart: "Trái tim vỡ",
   starFilled: "Ngôi sao",
+  bulb: "Bóng đèn / ý tưởng",
   sparkleCluster: "Chùm lấp lánh",
   music: "Nốt nhạc",
   dollar: "Đô la",
@@ -281,6 +282,72 @@ function IconPreview({ iconId }: { iconId: string }) {
         ),
       )}
     </svg>
+  );
+}
+
+/** Lets the user type an icon's id (e.g. "heart", "haha", "legacyGhost")
+ *  directly instead of hunting through the button grid -- looked up
+ *  case-insensitively against ICON_OPTIONS' own `id`s, the same names
+ *  shown as each button's tooltip. Same local-state + commit-on-blur/Enter
+ *  pattern as every other field here (TextAreaField, NumberField): typing
+ *  doesn't touch the store until the field loses focus, and an unrecognized
+ *  id just reverts the display back to the current selection rather than
+ *  clearing it -- there's no "blank" icon state to fall into. */
+function IconIdField({ value, onSelect }: { value: string; onSelect: (char: string) => void }) {
+  const currentId = ICON_OPTIONS.find((o) => o.char === value)?.id ?? "";
+  const [text, setText] = useState(currentId);
+  const [focused, setFocused] = useState(false);
+  const [invalid, setInvalid] = useState(false);
+
+  // Only re-syncs `text` from the external `value` prop while the field
+  // isn't focused (e.g. the user clicked a grid button instead) -- doesn't
+  // touch `invalid` here, so a failed commit's red border stays visible
+  // until the user actually edits again, instead of a same-render effect
+  // silently clearing it right after commit() just set it.
+  useEffect(() => {
+    if (!focused) setText(currentId);
+  }, [currentId, focused]);
+
+  const commit = () => {
+    setFocused(false);
+    const match = ICON_OPTIONS.find((o) => o.id.toLowerCase() === text.trim().toLowerCase());
+    if (match) {
+      setInvalid(false);
+      if (match.char !== value) onSelect(match.char);
+    } else {
+      setInvalid(true);
+      setText(currentId);
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      value={text}
+      data-testid="keycap-icon-id-field"
+      placeholder="Gõ tên icon, vd: heart, haha..."
+      title="Gõ đúng tên icon (xem chú thích khi rê chuột vào từng ô bên dưới) rồi Enter/bấm ra ngoài"
+      onFocus={() => setFocused(true)}
+      onChange={(e) => {
+        setText(e.target.value);
+        setInvalid(false);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      style={{
+        background: "#14171a",
+        border: `1px solid ${invalid ? "#c9564f" : "#3a3f47"}`,
+        color: "#e6e6e6",
+        borderRadius: 2,
+        padding: 4,
+        fontFamily: "inherit",
+        fontSize: 12,
+        width: "100%",
+        marginBottom: 4,
+      }}
+    />
   );
 }
 
@@ -571,6 +638,7 @@ export function KeycapPanel({
         <div className="transform-row" style={{ marginBottom: 6 }}>
           <label className="number-field" style={{ flex: 1 }}>
             <span>Icon</span>
+            <IconIdField value={params.legendText} onSelect={(char) => commit({ legendText: char })} />
             <IconGrid value={params.legendText} onSelect={(char) => commit({ legendText: char })} />
           </label>
         </div>
