@@ -320,34 +320,58 @@ function IconIdField({ value, onSelect }: { value: string; onSelect: (char: stri
     }
   };
 
+  // Live preview as the user types -- matched from the live `text` state,
+  // not just on commit/blur, so they see the icon shape immediately
+  // instead of having to blur first or go hunting through the grid below.
+  const liveMatch = ICON_OPTIONS.find((o) => o.id.toLowerCase() === text.trim().toLowerCase());
+
   return (
-    <input
-      type="text"
-      value={text}
-      data-testid="keycap-icon-id-field"
-      placeholder="Gõ tên icon, vd: heart, haha..."
-      title="Gõ đúng tên icon (xem chú thích khi rê chuột vào từng ô bên dưới) rồi Enter/bấm ra ngoài"
-      onFocus={() => setFocused(true)}
-      onChange={(e) => {
-        setText(e.target.value);
-        setInvalid(false);
-      }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-      }}
-      style={{
-        background: "#14171a",
-        border: `1px solid ${invalid ? "#c9564f" : "#3a3f47"}`,
-        color: "#e6e6e6",
-        borderRadius: 2,
-        padding: 4,
-        fontFamily: "inherit",
-        fontSize: 12,
-        width: "100%",
-        marginBottom: 4,
-      }}
-    />
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+      <input
+        type="text"
+        value={text}
+        data-testid="keycap-icon-id-field"
+        placeholder="Gõ tên icon, vd: heart, haha..."
+        title="Gõ đúng tên icon (xem chú thích khi rê chuột vào từng ô bên dưới) rồi Enter/bấm ra ngoài"
+        onFocus={() => setFocused(true)}
+        onChange={(e) => {
+          setText(e.target.value);
+          setInvalid(false);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        style={{
+          background: "#14171a",
+          border: `1px solid ${invalid ? "#c9564f" : "#3a3f47"}`,
+          color: "#e6e6e6",
+          borderRadius: 2,
+          padding: 4,
+          fontFamily: "inherit",
+          fontSize: 12,
+          flex: 1,
+        }}
+      />
+      <div
+        data-testid="keycap-icon-id-preview"
+        title={liveMatch ? (ICON_LABELS_VI[liveMatch.id] ?? liveMatch.label) : undefined}
+        style={{
+          width: 26,
+          height: 26,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#14171a",
+          border: "1px solid #3a3f47",
+          borderRadius: 2,
+          color: "#e6e6e6",
+        }}
+      >
+        {liveMatch && <IconPreview iconId={liveMatch.char} />}
+      </div>
+    </div>
   );
 }
 
