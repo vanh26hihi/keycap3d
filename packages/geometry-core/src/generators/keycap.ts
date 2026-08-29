@@ -470,6 +470,14 @@ function cavityTopOpeningMm(params: KeycapParams): { widthMm: number; lengthMm: 
  *  wall. */
 const STEM_PLATE_CLEARANCE_MM = 0.6;
 
+/** Height of the small reinforcing collar at the standalone stem's own
+ *  boss/plate joint (see buildStandaloneStemMesh) -- deliberately small
+ *  ("gờ nhỏ"), just enough to widen that joint's cross-section a bit, not
+ *  a structural flange in its own right. */
+const STEM_COLLAR_HEIGHT_MM = 0.8;
+/** How far the collar's own radius extends past the boss's, mm. */
+const STEM_COLLAR_OVERHANG_MM = 0.75;
+
 /**
  * Normalizes `bossDiameterMm` against the active switch profile and current
  * geometry: when `bossDiameterAuto` is true, replaces it with the smallest
@@ -891,7 +899,32 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
     rotationDeg: [0, 0, 0],
     scale: [1, 1, 1],
   });
+
+  // Small reinforcing rim (a short, slightly wider "collar") right where
+  // the boss meets the plate -- there are no reinforcement ribs on this
+  // piece (see this function's own doc comment: ribs weld the in-place
+  // boss to the surrounding shell wall, which doesn't exist here), so
+  // without this the boss/plate joint is just a plain 90-degree butt
+  // meeting a thin (MIN_STEM_WALL_MM) cylinder against a flat plate -- a
+  // real stress-concentration point under the lateral load of inserting/
+  // removing a switch. Height is capped well below bossFloorMm so it can
+  // never intrude into the socket cutter's own reach (see below), and its
+  // diameter is capped against the plate's own size for a tiny custom
+  // plate.
+  const collarHeightMm = Math.min(STEM_COLLAR_HEIGHT_MM, bossFloorMm * 0.6);
+  const collarDiameterMm = Math.min(
+    bossDiameterMm + 2 * STEM_COLLAR_OVERHANG_MM,
+    Math.min(params.stemPlateWidthMm, params.stemPlateLengthMm) - 1,
+  );
   let mesh = engine.union(plate, boss);
+  if (collarHeightMm > 0.05 && collarDiameterMm > bossDiameterMm) {
+    const collar = applyTransformToMesh(createCylinderMesh(collarDiameterMm, collarHeightMm, CYLINDER_SEGMENTS), {
+      position: [params.stemOffsetXMm, params.stemOffsetYMm, bossRootZ + collarHeightMm / 2],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    mesh = engine.union(mesh, collar);
+  }
 
   // Mirror image of the in-place version's cutter placement: extends PAST
   // bossTipZ (by CUT_EXTENSION_MM) so the subtraction cleanly opens at that

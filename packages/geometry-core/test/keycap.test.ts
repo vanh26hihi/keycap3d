@@ -603,6 +603,36 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     }
   });
 
+  it("has a small reinforcing collar at the boss/plate joint, wider than the boss but not reaching the socket cutter", async () => {
+    const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
+    const mesh = await createKeycapMesh({ switchType: "round", stemSeparate: true });
+    const engine = await createBooleanEngine();
+    const offsetXMm = resolved.widthMm / 2 + resolved.stemPlateWidthMm / 2 + 2; // STEM_SEPARATE_GAP_MM
+    const plateThicknessMm = Math.max(resolved.wallThicknessMm, 1.2); // MIN_PRINT_WALL_MM
+
+    // Just outside the boss's own radius, right at the boss/plate joint --
+    // real collar material there, not empty air (which is what a plain
+    // boss-on-plate butt joint, no collar, would leave).
+    const collarProbeR = resolved.bossDiameterMm / 2 + 0.3;
+    const collarProbe = applyTransformToMesh(createCubeMesh(0.4, 0.4, 0.3), {
+      position: [offsetXMm + collarProbeR, 0, plateThicknessMm + 0.15],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    expect(Math.abs(computeSignedVolume(engine.intersect(mesh, collarProbe)))).toBeGreaterThan(0);
+
+    // Higher up (well into the boss's own straight section, past the
+    // collar's short height), the same radial offset must be hollow again
+    // -- confirms the collar is a short, LOCAL reinforcement at the joint,
+    // not just a uniformly wider boss for its whole height.
+    const aboveCollarProbe = applyTransformToMesh(createCubeMesh(0.4, 0.4, 0.3), {
+      position: [offsetXMm + collarProbeR, 0, plateThicknessMm + 2],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    expect(Math.abs(computeSignedVolume(engine.intersect(mesh, aboveCollarProbe)))).toBeLessThan(0.01);
+  });
+
   it("has no effect when switchType is 'none'", async () => {
     const without = await createKeycapMesh({ switchType: "none" });
     const withFlag = await createKeycapMesh({ switchType: "none", stemSeparate: true });
