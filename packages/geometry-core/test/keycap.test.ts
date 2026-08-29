@@ -481,6 +481,74 @@ describe("createKeycapMesh: boss reinforcement ribs", () => {
   });
 });
 
+describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing printable piece)", () => {
+  it("the shell's cavity has no boss material where the boss would normally sit", async () => {
+    const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
+    const mesh = await createKeycapMesh({ switchType: "round", stemSeparate: true });
+    const bossHeightMm = resolved.socketDepthMm + MIN_STEM_WALL_MM;
+    const bossCenterZ = resolved.heightMm - bossHeightMm / 2;
+    const engine = await createBooleanEngine();
+    const probe = applyTransformToMesh(createCubeMesh(1, 1, 1), {
+      position: [0, 0, bossCenterZ],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    const intersection = engine.intersect(mesh, probe);
+    expect(Math.abs(computeSignedVolume(intersection))).toBeLessThan(0.01);
+  });
+
+  it("a separate solid with a real socket cutout exists beside the shell's own footprint", async () => {
+    const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
+    const mesh = await createKeycapMesh({ switchType: "round", stemSeparate: true });
+    const engine = await createBooleanEngine();
+    const offsetXMm = resolved.widthMm / 2 + resolved.bossDiameterMm / 2 + 2; // STEM_SEPARATE_GAP_MM
+    // A generous probe box around where the standalone piece should sit --
+    // real material, not empty air.
+    const probe = applyTransformToMesh(createCubeMesh(resolved.bossDiameterMm, resolved.bossDiameterMm, resolved.heightMm), {
+      position: [offsetXMm, 0, resolved.heightMm / 2],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    const intersection = engine.intersect(mesh, probe);
+    expect(Math.abs(computeSignedVolume(intersection))).toBeGreaterThan(0);
+
+    // The socket itself should be an actual hollow (blind) cavity, not a
+    // solid boss -- probe right at the piece's own center/top, where the
+    // round-profile cutter opens.
+    const socketProbe = applyTransformToMesh(createCubeMesh(1, 1, 1), {
+      position: [offsetXMm, 0, resolved.heightMm - 1],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    const socketIntersection = engine.intersect(mesh, socketProbe);
+    expect(Math.abs(computeSignedVolume(socketIntersection))).toBeLessThan(0.01);
+  });
+
+  it("stays watertight for both switch profiles, with no reinforcement ribs (nothing to weld into)", async () => {
+    for (const switchType of ["round", "cherry-mx"] as const) {
+      const mesh = await createKeycapMesh({ switchType, stemSeparate: true });
+      const report = validateMesh(mesh);
+      expect(report.isWatertight, switchType).toBe(true);
+      expect(report.degenerateTriangleCount, switchType).toBe(0);
+    }
+  });
+
+  it("has no effect when switchType is 'none'", async () => {
+    const without = await createKeycapMesh({ switchType: "none" });
+    const withFlag = await createKeycapMesh({ switchType: "none", stemSeparate: true });
+    expect(computeSignedVolume(withFlag)).toBeCloseTo(computeSignedVolume(without), 6);
+  });
+
+  it("createKeycapMeshParts merges the standalone piece into `base` too", async () => {
+    const parts = await createKeycapMeshParts({ switchType: "round", stemSeparate: true, legendText: "A", legendMode: "emboss" });
+    const withoutStem = await createKeycapMeshParts({ switchType: "none", legendText: "A", legendMode: "emboss" });
+    expect(validateMesh(parts.base).isWatertight).toBe(true);
+    // The separate piece adds real extra volume to `base` beyond a plain
+    // shell -- confirms it actually got merged in, not silently dropped.
+    expect(computeSignedVolume(parts.base)).toBeGreaterThan(computeSignedVolume(withoutStem.base));
+  });
+});
+
 describe("createKeycapMesh: boss never pokes out past the keycap's own bottom edge", () => {
   it("an extreme socketDepthMm (deeper than the keycap is tall) stays watertight and never produces geometry below z=0", async () => {
     const mesh = await createKeycapMesh({ socketDepthMm: 50, heightMm: 10 });

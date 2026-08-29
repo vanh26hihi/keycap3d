@@ -530,6 +530,18 @@ export function KeycapPanel({
       {params.switchType !== "none" && (
         <>
           <div className="transform-row" style={{ marginBottom: 6 }}>
+            <label className="number-field" style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={params.stemSeparate}
+                data-testid="keycap-field-stemSeparate"
+                onChange={(e) => commit({ stemSeparate: e.target.checked })}
+              />
+              <span>Tách rời chốt (in riêng, dán lại)</span>
+            </label>
+          </div>
+
+          <div className="transform-row" style={{ marginBottom: 6 }}>
             {params.switchType === "round" ? (
               <NumberField
                 fieldKey="socketDiameter"
@@ -579,18 +591,20 @@ export function KeycapPanel({
             />
           </div>
 
-          <div className="transform-row" style={{ marginBottom: 6 }}>
-            <NumberField
-              fieldKey="ribHeight"
-              label="Chiều cao rib"
-              title="Chiều cao 4 rib gia cường quanh chốt -- không thể cao hơn chính chốt"
-              value={params.ribHeightMm}
-              min={1}
-              max={Math.min(params.socketDepthMm + 0.75, params.heightMm)}
-              step={0.1}
-              onCommit={(v) => commit({ ribHeightMm: v })}
-            />
-          </div>
+          {!params.stemSeparate && (
+            <div className="transform-row" style={{ marginBottom: 6 }}>
+              <NumberField
+                fieldKey="ribHeight"
+                label="Chiều cao rib"
+                title="Chiều cao 4 rib gia cường quanh chốt -- không thể cao hơn chính chốt. Ẩn khi 'Tách rời chốt' bật vì chốt rời không có rib để hàn vào vỏ."
+                value={params.ribHeightMm}
+                min={1}
+                max={Math.min(params.socketDepthMm + 0.75, params.heightMm)}
+                step={0.1}
+                onCommit={(v) => commit({ ribHeightMm: v })}
+              />
+            </div>
+          )}
 
           <div className="transform-row" style={{ marginBottom: 6, alignItems: "flex-end" }}>
             <NumberField

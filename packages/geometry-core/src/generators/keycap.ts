@@ -65,6 +65,19 @@ export interface KeycapParams {
    *  and edit bossDiameterMm directly to override (still clamped, see
    *  above). */
   bossDiameterAuto: boolean;
+  /** When true, the boss/socket ("chốt") is built as its own standalone
+   *  printable piece -- positioned beside the keycap shell's own footprint
+   *  (not embedded inside its cavity) -- instead of being welded into the
+   *  shell as usual. Matches a real reference: a separately-printed
+   *  cross-stem clip glued onto a blank keycap tile afterward, rather than
+   *  a one-piece print. The standalone piece has no reinforcement ribs
+   *  (those exist to weld the boss into the surrounding shell wall, which
+   *  doesn't apply once it's detached) and both pieces still come out of
+   *  ONE mesh/export -- just laid out apart on the print bed rather than
+   *  fused together -- so gluing them is the only extra step versus the
+   *  normal one-piece keycap. No effect when switchType is "none".
+   */
+  stemSeparate: boolean;
   /** Cherry MX cross dimensions, mm (used when switchType === "cherry-mx").
    *  The nominal Cherry MX/MX-compatible plunger cross is commonly cited as
    *  ~4.0mm span x ~1.3mm arm width; the defaults here are that nominal size
@@ -154,6 +167,7 @@ export const DEFAULT_KEYCAP_PARAMS: KeycapParams = {
   socketDepthMm: 6.75,
   bossDiameterMm: 5.5, // matches the auto-computed value for the defaults below (stemCrossWidthMm 4.0 + 2*MIN_STEM_WALL_MM); see resolveKeycapParams
   bossDiameterAuto: true,
+  stemSeparate: false,
   // Cross Span (4.0mm) confirmed by direct measurement against a real,
   // verified commercial MX-compatible artisan keycap's own mesh (a .3mf the
   // user provided -- vertices at the socket's entrance ring were parsed and
@@ -704,6 +718,68 @@ interface KeycapBase {
   topWidth: number;
   topLength: number;
   legendRequested: boolean;
+  /** Non-null exactly when params.stemSeparate is on (and a socket was
+   *  actually requested) -- the boss/socket as its own free-standing
+   *  piece, already positioned beside the shell's own footprint (see
+   *  buildStandaloneStemMesh), for the caller to merge (plain
+   *  concatenation, not a boolean union -- the two solids never touch) into
+   *  whatever it returns. */
+  stemMesh: MeshBuffer | null;
+}
+
+/** How far apart (mm, gap only) the standalone stem piece sits from the
+ *  shell's own footprint when stemSeparate is on -- just enough clearance
+ *  that the two solids never touch/overlap regardless of boss diameter. */
+const STEM_SEPARATE_GAP_MM = 2;
+
+/**
+ * Builds the boss/socket as its own free-standing, printable piece instead
+ * of welding it into the shell -- see KeycapParams.stemSeparate's doc
+ * comment for why (a separately-printed clip glued on afterward, matching
+ * a real reference). Reuses the exact same boss/cutter/chamfer sizing math
+ * as the in-place version (buildKeycapBase's own `switchType !== "none"`
+ * branch below), just re-based so the boss's own bottom sits at local z=0
+ * (no shell to embed it in anymore, so nothing to merge flush with) instead
+ * of `heightMm - bossHeightMm`, and with NO reinforcement ribs (those exist
+ * purely to weld the boss into the surrounding shell wall, which doesn't
+ * apply once it's detached). Positioned beside the shell's own footprint
+ * (offset in +X by half its width plus half the boss diameter plus a fixed
+ * gap) so merging this into the shell's own mesh lays both pieces out
+ * ready to print together on one bed and glue afterward.
+ */
+function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): MeshBuffer {
+  const profile = STEM_PROFILES[params.switchType as Exclude<SwitchType, "none">];
+  const bossDiameterMm = Math.max(Math.min(params.bossDiameterMm, computeCavityClearanceMm(params)), 2 * MIN_PRINT_WALL_MM);
+  const clampedCharWidthMm = Math.min(profile.characteristicWidthMm(params), bossDiameterMm - 2 * MIN_STEM_WALL_MM);
+
+  const bossFloorMm = Math.max(MIN_STEM_WALL_MM, 0.1);
+  const bossHeightMm = Math.min(params.socketDepthMm + bossFloorMm, params.heightMm);
+  const socketDepthMm = Math.max(bossHeightMm - bossFloorMm, 0.5);
+  const bossBottomZ = 0;
+
+  let mesh = applyTransformToMesh(createCylinderMesh(bossDiameterMm, bossHeightMm, CYLINDER_SEGMENTS), {
+    position: [0, 0, bossHeightMm / 2],
+    rotationDeg: [0, 0, 0],
+    scale: [1, 1, 1],
+  });
+
+  const cutterHeightMm = socketDepthMm + CUT_EXTENSION_MM;
+  const cutterCenterZ = bossBottomZ - CUT_EXTENSION_MM + cutterHeightMm / 2;
+  const cutterOffset: [number, number, number] = [0, 0, cutterCenterZ];
+  for (const cutter of profile.buildCutters(params, clampedCharWidthMm, cutterHeightMm, cutterOffset)) {
+    mesh = engine.subtract(mesh, cutter);
+  }
+
+  const chamferCutterHeightMm = ENTRANCE_CHAMFER_HEIGHT_MM + CUT_EXTENSION_MM;
+  const chamferCenterZ = bossBottomZ - CUT_EXTENSION_MM + chamferCutterHeightMm / 2;
+  const chamferOffset: [number, number, number] = [0, 0, chamferCenterZ];
+  const chamferedWidthMm = clampedCharWidthMm + 2 * ENTRANCE_CHAMFER_MM;
+  for (const cutter of profile.buildCutters(params, chamferedWidthMm, chamferCutterHeightMm, chamferOffset)) {
+    mesh = engine.subtract(mesh, cutter);
+  }
+
+  const offsetXMm = params.widthMm / 2 + bossDiameterMm / 2 + STEM_SEPARATE_GAP_MM;
+  return applyTransformToMesh(mesh, { position: [offsetXMm, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
 }
 
 /**
@@ -734,11 +810,12 @@ async function buildKeycapBase(params: KeycapParams): Promise<KeycapBase> {
   const legendRequested = params.legendMode !== "none" && params.legendText.trim().length > 0;
 
   if (params.wallThicknessMm <= 0 && !legendRequested) {
-    return { mesh: outerShell, engine: null, topWidth, topLength, legendRequested };
+    return { mesh: outerShell, engine: null, topWidth, topLength, legendRequested, stemMesh: null };
   }
 
   const engine = await createBooleanEngine();
   let mesh = outerShell;
+  let stemMesh: MeshBuffer | null = null;
 
   if (params.wallThicknessMm > 0) {
     const [innerBottomRadius, innerTopRadius] = matchCornerSharpness(
@@ -756,7 +833,9 @@ async function buildKeycapBase(params: KeycapParams): Promise<KeycapBase> {
 
     mesh = engine.subtract(outerShell, cavity);
 
-    if (params.switchType !== "none") {
+    if (params.switchType !== "none" && params.stemSeparate) {
+      stemMesh = buildStandaloneStemMesh(engine, params);
+    } else if (params.switchType !== "none") {
       const profile = STEM_PROFILES[params.switchType];
       // bossDiameterMm is already fully resolved (auto-computed or
       // manually-clamped) by resolveKeycapParams above; re-clamp against
@@ -887,7 +966,7 @@ async function buildKeycapBase(params: KeycapParams): Promise<KeycapBase> {
     }
   }
 
-  return { mesh, engine, topWidth, topLength, legendRequested };
+  return { mesh, engine, topWidth, topLength, legendRequested, stemMesh };
 }
 
 /**
@@ -898,10 +977,15 @@ async function buildKeycapBase(params: KeycapParams): Promise<KeycapBase> {
 export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}): Promise<MeshBuffer> {
   const params: KeycapParams = resolveKeycapParams(paramsInput);
   const base = await buildKeycapBase(params);
-  if (!base.legendRequested) return base.mesh;
+  // stemMesh (see KeycapParams.stemSeparate) is a plain concatenation, not
+  // a boolean union -- it's a physically separate piece positioned beside
+  // the shell's own footprint, not touching it, so there's nothing for a
+  // boolean op to do.
+  const withStem = (mesh: MeshBuffer): MeshBuffer => (base.stemMesh ? mergeMeshes([mesh, base.stemMesh]) : mesh);
+  if (!base.legendRequested) return withStem(base.mesh);
   // engine is guaranteed non-null here: the fast path above only skips it
   // when !legendRequested.
-  return applyLegend(base.engine!, base.mesh, params, base.topWidth, base.topLength);
+  return withStem(applyLegend(base.engine!, base.mesh, params, base.topWidth, base.topLength));
 }
 
 /**
@@ -923,8 +1007,12 @@ export async function createKeycapMeshParts(
 ): Promise<{ base: MeshBuffer; bubble: MeshBuffer | null; legend: MeshBuffer | null }> {
   const params: KeycapParams = resolveKeycapParams(paramsInput);
   const built = await buildKeycapBase(params);
+  // See createKeycapMesh's identical comment: stemMesh is a separate piece
+  // positioned beside `base`'s own footprint, merged in with plain
+  // concatenation rather than a boolean union.
+  const withStem = (mesh: MeshBuffer): MeshBuffer => (built.stemMesh ? mergeMeshes([mesh, built.stemMesh]) : mesh);
   if (!built.legendRequested) {
-    return { base: built.mesh, bubble: null, legend: null };
+    return { base: withStem(built.mesh), bubble: null, legend: null };
   }
   const engine = built.engine!;
   const { bubbleMesh, legendMesh, legendMode } = buildLegendParts(engine, params, built.topWidth, built.topLength);
@@ -941,5 +1029,5 @@ export async function createKeycapMeshParts(
     legend = legendMesh;
   }
 
-  return { base, bubble, legend };
+  return { base: withStem(base), bubble, legend };
 }
