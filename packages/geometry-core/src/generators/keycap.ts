@@ -729,23 +729,36 @@ interface KeycapBase {
 
 /** How far apart (mm, gap only) the standalone stem piece sits from the
  *  shell's own footprint when stemSeparate is on -- just enough clearance
- *  that the two solids never touch/overlap regardless of boss diameter. */
+ *  that the two solids never touch/overlap regardless of plate size. */
 const STEM_SEPARATE_GAP_MM = 2;
+
+/** Thickness of the standalone stem piece's own flat base plate, mm --
+ *  matches the shell's own wall thickness by default (so the two pieces
+ *  read as belonging to the same set) but never thinner than
+ *  MIN_PRINT_WALL_MM even if wallThicknessMm is 0 (a solid-top keycap can
+ *  still use stemSeparate; the plate needs to exist regardless). */
+function stemPlateThicknessMm(params: KeycapParams): number {
+  return Math.max(params.wallThicknessMm, MIN_PRINT_WALL_MM);
+}
 
 /**
  * Builds the boss/socket as its own free-standing, printable piece instead
  * of welding it into the shell -- see KeycapParams.stemSeparate's doc
  * comment for why (a separately-printed clip glued on afterward, matching
- * a real reference). Reuses the exact same boss/cutter/chamfer sizing math
- * as the in-place version (buildKeycapBase's own `switchType !== "none"`
- * branch below), just re-based so the boss's own bottom sits at local z=0
- * (no shell to embed it in anymore, so nothing to merge flush with) instead
- * of `heightMm - bossHeightMm`, and with NO reinforcement ribs (those exist
+ * a real reference). The piece is a flat rectangular BASE PLATE -- same
+ * width/length/corner-radius as the keycap's own bottom footprint, so the
+ * glue joint is a flat plate-to-plate contact matching the reference photo,
+ * not just the boss's own small circular footprint -- with the boss rising
+ * from its top face and the socket cut into that. Reuses the exact same
+ * boss/cutter/chamfer sizing math as the in-place version (buildKeycapBase's
+ * own `switchType !== "none"` branch below), just re-based so the plate's
+ * own bottom sits at local z=0 (no shell to embed it in anymore) instead of
+ * `heightMm - bossHeightMm`, and with NO reinforcement ribs (those exist
  * purely to weld the boss into the surrounding shell wall, which doesn't
  * apply once it's detached). Positioned beside the shell's own footprint
- * (offset in +X by half its width plus half the boss diameter plus a fixed
- * gap) so merging this into the shell's own mesh lays both pieces out
- * ready to print together on one bed and glue afterward.
+ * (offset in +X by half its width plus half this piece's own plate width
+ * plus a fixed gap) so merging this into the shell's own mesh lays both
+ * pieces out ready to print together on one bed and glue afterward.
  */
 function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): MeshBuffer {
   const profile = STEM_PROFILES[params.switchType as Exclude<SwitchType, "none">];
@@ -755,30 +768,40 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
   const bossFloorMm = Math.max(MIN_STEM_WALL_MM, 0.1);
   const bossHeightMm = Math.min(params.socketDepthMm + bossFloorMm, params.heightMm);
   const socketDepthMm = Math.max(bossHeightMm - bossFloorMm, 0.5);
-  const bossBottomZ = 0;
 
-  let mesh = applyTransformToMesh(createCylinderMesh(bossDiameterMm, bossHeightMm, CYLINDER_SEGMENTS), {
-    position: [0, 0, bossHeightMm / 2],
+  const plateThicknessMm = stemPlateThicknessMm(params);
+  const plateProfile = roundedRectProfile(params.widthMm, params.lengthMm, params.cornerRadiusMm, PROFILE_SEGMENTS_PER_CORNER);
+  const plate = loftProfiles(plateProfile, plateProfile, 0, plateThicknessMm);
+
+  // The boss sits on top of the plate (its own bottom flush with the
+  // plate's own top face), same "boss reaches the ceiling" idea as the
+  // in-place version -- here the plate's top IS the ceiling it welds into.
+  const bossBottomZ = plateThicknessMm;
+  const boss = applyTransformToMesh(createCylinderMesh(bossDiameterMm, bossHeightMm, CYLINDER_SEGMENTS), {
+    position: [params.stemOffsetXMm, params.stemOffsetYMm, bossBottomZ + bossHeightMm / 2],
     rotationDeg: [0, 0, 0],
     scale: [1, 1, 1],
   });
+  let mesh = engine.union(plate, boss);
 
   const cutterHeightMm = socketDepthMm + CUT_EXTENSION_MM;
   const cutterCenterZ = bossBottomZ - CUT_EXTENSION_MM + cutterHeightMm / 2;
-  const cutterOffset: [number, number, number] = [0, 0, cutterCenterZ];
+  const cutterOffset: [number, number, number] = [params.stemOffsetXMm, params.stemOffsetYMm, cutterCenterZ];
   for (const cutter of profile.buildCutters(params, clampedCharWidthMm, cutterHeightMm, cutterOffset)) {
     mesh = engine.subtract(mesh, cutter);
   }
 
   const chamferCutterHeightMm = ENTRANCE_CHAMFER_HEIGHT_MM + CUT_EXTENSION_MM;
   const chamferCenterZ = bossBottomZ - CUT_EXTENSION_MM + chamferCutterHeightMm / 2;
-  const chamferOffset: [number, number, number] = [0, 0, chamferCenterZ];
+  const chamferOffset: [number, number, number] = [params.stemOffsetXMm, params.stemOffsetYMm, chamferCenterZ];
   const chamferedWidthMm = clampedCharWidthMm + 2 * ENTRANCE_CHAMFER_MM;
   for (const cutter of profile.buildCutters(params, chamferedWidthMm, chamferCutterHeightMm, chamferOffset)) {
     mesh = engine.subtract(mesh, cutter);
   }
 
-  const offsetXMm = params.widthMm / 2 + bossDiameterMm / 2 + STEM_SEPARATE_GAP_MM;
+  // Shell's own right edge (widthMm/2) + this piece's own half-width
+  // (also widthMm/2, since the plate matches the shell's footprint) + gap.
+  const offsetXMm = params.widthMm + STEM_SEPARATE_GAP_MM;
   return applyTransformToMesh(mesh, { position: [offsetXMm, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
 }
 

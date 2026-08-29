@@ -497,31 +497,49 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     expect(Math.abs(computeSignedVolume(intersection))).toBeLessThan(0.01);
   });
 
-  it("a separate solid with a real socket cutout exists beside the shell's own footprint", async () => {
+  it("the standalone piece is a flat plate matching the keycap's own bottom footprint, with the boss+socket rising from its top", async () => {
     const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
     const mesh = await createKeycapMesh({ switchType: "round", stemSeparate: true });
     const engine = await createBooleanEngine();
-    const offsetXMm = resolved.widthMm / 2 + resolved.bossDiameterMm / 2 + 2; // STEM_SEPARATE_GAP_MM
-    // A generous probe box around where the standalone piece should sit --
-    // real material, not empty air.
-    const probe = applyTransformToMesh(createCubeMesh(resolved.bossDiameterMm, resolved.bossDiameterMm, resolved.heightMm), {
-      position: [offsetXMm, 0, resolved.heightMm / 2],
-      rotationDeg: [0, 0, 0],
-      scale: [1, 1, 1],
-    });
-    const intersection = engine.intersect(mesh, probe);
-    expect(Math.abs(computeSignedVolume(intersection))).toBeGreaterThan(0);
+    const offsetXMm = resolved.widthMm + 2; // STEM_SEPARATE_GAP_MM
+    const plateThicknessMm = Math.max(resolved.wallThicknessMm, 1.2); // MIN_PRINT_WALL_MM
 
-    // The socket itself should be an actual hollow (blind) cavity, not a
-    // solid boss -- probe right at the piece's own center/top, where the
-    // round-profile cutter opens.
-    const socketProbe = applyTransformToMesh(createCubeMesh(1, 1, 1), {
-      position: [offsetXMm, 0, resolved.heightMm - 1],
+    // Real plate material near the piece's own bottom, well away from the
+    // boss/socket at its center.
+    const plateProbe = applyTransformToMesh(createCubeMesh(2, 2, 0.5), {
+      position: [offsetXMm + resolved.widthMm / 2 - 1, resolved.lengthMm / 2 - 1, plateThicknessMm / 2],
       rotationDeg: [0, 0, 0],
       scale: [1, 1, 1],
     });
-    const socketIntersection = engine.intersect(mesh, socketProbe);
-    expect(Math.abs(computeSignedVolume(socketIntersection))).toBeLessThan(0.01);
+    expect(Math.abs(computeSignedVolume(engine.intersect(mesh, plateProbe)))).toBeGreaterThan(0);
+
+    // The socket itself should be an actual hollow (blind) cavity opening
+    // from the boss's own top down into the plate, not solid boss material
+    // -- probe just inside that hollow (the cutter's own reach is
+    // `plateThicknessMm` up to `plateThicknessMm + socketDepthMm`; leave
+    // margin from that top edge so this doesn't land in the intentional
+    // solid floor above it).
+    const socketProbe = applyTransformToMesh(createCubeMesh(1, 1, 1), {
+      position: [offsetXMm, 0, plateThicknessMm + resolved.socketDepthMm - 1],
+      rotationDeg: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
+    expect(Math.abs(computeSignedVolume(engine.intersect(mesh, socketProbe)))).toBeLessThan(0.01);
+
+    // The plate's own XY footprint matches the keycap's own bottom size
+    // exactly -- this is the whole point of the plate (a flat glue joint
+    // the same size as the keycap's own base, not just the bare boss).
+    const pos = mesh.positions;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      if (pos[i] < offsetXMm - resolved.widthMm / 2 - 0.5) continue; // skip the shell's own footprint
+      minX = Math.min(minX, pos[i]);
+      maxX = Math.max(maxX, pos[i]);
+      minY = Math.min(minY, pos[i + 1]);
+      maxY = Math.max(maxY, pos[i + 1]);
+    }
+    expect(maxX - minX).toBeCloseTo(resolved.widthMm, 2);
+    expect(maxY - minY).toBeCloseTo(resolved.lengthMm, 2);
   });
 
   it("stays watertight for both switch profiles, with no reinforcement ribs (nothing to weld into)", async () => {
