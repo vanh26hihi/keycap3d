@@ -1024,18 +1024,22 @@ export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}):
  * own printable object, and leaving the bubble as a separate part with an
  * unrelated hole in it (while `base` underneath stays untouched) wouldn't
  * correspond to anything printable either.
+ *
+ * `stem` (see KeycapParams.stemSeparate) is kept as its own object here --
+ * unlike the single-mesh `createKeycapMesh` path, which merges it into one
+ * combined printable mesh for the viewport/single-STL export, this
+ * multi-part path is specifically for assigning each part its own
+ * filament/AMS slot, and the whole point of stemSeparate is printing the
+ * stem as a distinct piece -- so it gets a real, separately-colorable
+ * object here instead of being folded back into `base`.
  */
 export async function createKeycapMeshParts(
   paramsInput: Partial<KeycapParams> = {},
-): Promise<{ base: MeshBuffer; bubble: MeshBuffer | null; legend: MeshBuffer | null }> {
+): Promise<{ base: MeshBuffer; bubble: MeshBuffer | null; legend: MeshBuffer | null; stem: MeshBuffer | null }> {
   const params: KeycapParams = resolveKeycapParams(paramsInput);
   const built = await buildKeycapBase(params);
-  // See createKeycapMesh's identical comment: stemMesh is a separate piece
-  // positioned beside `base`'s own footprint, merged in with plain
-  // concatenation rather than a boolean union.
-  const withStem = (mesh: MeshBuffer): MeshBuffer => (built.stemMesh ? mergeMeshes([mesh, built.stemMesh]) : mesh);
   if (!built.legendRequested) {
-    return { base: withStem(built.mesh), bubble: null, legend: null };
+    return { base: built.mesh, bubble: null, legend: null, stem: built.stemMesh };
   }
   const engine = built.engine!;
   const { bubbleMesh, legendMesh, legendMode } = buildLegendParts(engine, params, built.topWidth, built.topLength);
@@ -1052,5 +1056,5 @@ export async function createKeycapMeshParts(
     legend = legendMesh;
   }
 
-  return { base: withStem(base), bubble, legend };
+  return { base, bubble, legend, stem: built.stemMesh };
 }

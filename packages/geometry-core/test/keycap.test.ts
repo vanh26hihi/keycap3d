@@ -557,13 +557,21 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     expect(computeSignedVolume(withFlag)).toBeCloseTo(computeSignedVolume(without), 6);
   });
 
-  it("createKeycapMeshParts merges the standalone piece into `base` too", async () => {
+  it("createKeycapMeshParts keeps the standalone piece as its own separately-colorable `stem` object, not merged into `base`", async () => {
     const parts = await createKeycapMeshParts({ switchType: "round", stemSeparate: true, legendText: "A", legendMode: "emboss" });
     const withoutStem = await createKeycapMeshParts({ switchType: "none", legendText: "A", legendMode: "emboss" });
+    expect(parts.stem).not.toBeNull();
+    expect(validateMesh(parts.stem!).isWatertight).toBe(true);
     expect(validateMesh(parts.base).isWatertight).toBe(true);
-    // The separate piece adds real extra volume to `base` beyond a plain
-    // shell -- confirms it actually got merged in, not silently dropped.
-    expect(computeSignedVolume(parts.base)).toBeGreaterThan(computeSignedVolume(withoutStem.base));
+    // `base` (the shell) is unaffected by stemSeparate -- same volume as a
+    // switchType:'none' shell, since the boss/socket now lives entirely in
+    // the separate `stem` object instead.
+    expect(computeSignedVolume(parts.base)).toBeCloseTo(computeSignedVolume(withoutStem.base), 6);
+  });
+
+  it("createKeycapMeshParts.stem is null when stemSeparate is off, even with a switch profile selected", async () => {
+    const parts = await createKeycapMeshParts({ switchType: "round", stemSeparate: false });
+    expect(parts.stem).toBeNull();
   });
 });
 
