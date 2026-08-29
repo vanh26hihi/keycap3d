@@ -141,6 +141,20 @@ export interface KeycapParams {
    *  regardless of what's requested here, so it always stays a real,
    *  ceiling-anchored rib no taller than the boss itself. */
   ribHeightMm: number;
+  /** Per-part colors ("#RRGGBB"), used only for the multi-part 3MF export
+   *  (createKeycapMeshParts + exportKeycapMultiPart3MFBlob) -- embedded as
+   *  each object's own base-material color (see threemf.ts's
+   *  ThreeMFPart.colorHex) so a slicer opening the file shows/pre-assigns
+   *  the right color per part instead of every part defaulting to
+   *  whatever the slicer itself picks. Purely export metadata: the single
+   *  fused mesh (createKeycapMesh, used for the 3D viewport and plain STL
+   *  export) has no per-part color concept -- it's one solid, one
+   *  material, same as before this field existed. `stemColorHex` only
+   *  matters when stemSeparate is also on. */
+  baseColorHex: string;
+  bubbleColorHex: string;
+  legendColorHex: string;
+  stemColorHex: string;
 }
 
 export const DEFAULT_KEYCAP_PARAMS: KeycapParams = {
@@ -192,6 +206,14 @@ export const DEFAULT_KEYCAP_PARAMS: KeycapParams = {
   // RIB_ENTRANCE_CLEARANCE_MM = 7.5 - 2.75) produced for every other
   // default above, so this default keeps prior behavior unchanged.
   ribHeightMm: 4.75,
+  // Neutral starting palette -- a plain keycap body, a white chat-bubble
+  // background (matches the reference mockup), dark legend ink, and a
+  // stem/socket piece the same shade as the body (it's normally the same
+  // plastic, just printed separately -- see stemSeparate).
+  baseColorHex: "#c9cdd3",
+  bubbleColorHex: "#ffffff",
+  legendColorHex: "#222222",
+  stemColorHex: "#c9cdd3",
 };
 
 // Corner-arc and circle tessellation, both bumped up from this generator's
@@ -748,17 +770,31 @@ function stemPlateThicknessMm(params: KeycapParams): number {
  * a real reference). The piece is a flat rectangular BASE PLATE -- same
  * width/length/corner-radius as the keycap's own bottom footprint, so the
  * glue joint is a flat plate-to-plate contact matching the reference photo,
- * not just the boss's own small circular footprint -- with the boss rising
- * from its top face and the socket cut into that. Reuses the exact same
- * boss/cutter/chamfer sizing math as the in-place version (buildKeycapBase's
- * own `switchType !== "none"` branch below), just re-based so the plate's
- * own bottom sits at local z=0 (no shell to embed it in anymore) instead of
- * `heightMm - bossHeightMm`, and with NO reinforcement ribs (those exist
- * purely to weld the boss into the surrounding shell wall, which doesn't
- * apply once it's detached). Positioned beside the shell's own footprint
- * (offset in +X by half its width plus half this piece's own plate width
- * plus a fixed gap) so merging this into the shell's own mesh lays both
- * pieces out ready to print together on one bed and glue afterward.
+ * not just the boss's own small circular footprint -- with the boss
+ * hanging DOWN from its underside and the socket cut into that.
+ *
+ * Orientation matters here and is easy to get backwards: the plate's OWN
+ * top face is what glues to the inside of the keycap's ceiling, so the
+ * boss has to hang below the plate (away from the glue face) with its
+ * socket ENTRANCE at the boss's own free/bottom end -- exactly mirroring
+ * the in-place version, where the boss hangs down from the shell's real
+ * ceiling with its entrance at the bottom, facing the switch below. Boss
+ * above the plate (entrance facing the glue face) was tried first and is
+ * wrong: that entrance would open into the plate's own solid interior
+ * instead of any real exterior face, so it's not actually reachable by a
+ * switch once glued.
+ *
+ * Reuses the exact same boss/cutter/chamfer sizing math as the in-place
+ * version (buildKeycapBase's own `switchType !== "none"` branch below),
+ * just re-based so the boss's own bottom (the entrance) sits at local z=0
+ * -- same as that in-place version's own bossBottomZ=0 convention when
+ * there's no shell height to subtract from -- with NO reinforcement ribs
+ * (those exist purely to weld the boss into the surrounding shell wall,
+ * which doesn't apply once it's detached). Positioned beside the shell's
+ * own footprint (offset in +X by half its width plus half this piece's own
+ * plate width plus a fixed gap) so merging this into the shell's own mesh
+ * lays both pieces out ready to print together on one bed and glue
+ * afterward.
  */
 function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): MeshBuffer {
   const profile = STEM_PROFILES[params.switchType as Exclude<SwitchType, "none">];
@@ -768,15 +804,15 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
   const bossFloorMm = Math.max(MIN_STEM_WALL_MM, 0.1);
   const bossHeightMm = Math.min(params.socketDepthMm + bossFloorMm, params.heightMm);
   const socketDepthMm = Math.max(bossHeightMm - bossFloorMm, 0.5);
+  const bossBottomZ = 0;
 
   const plateThicknessMm = stemPlateThicknessMm(params);
   const plateProfile = roundedRectProfile(params.widthMm, params.lengthMm, params.cornerRadiusMm, PROFILE_SEGMENTS_PER_CORNER);
-  const plate = loftProfiles(plateProfile, plateProfile, 0, plateThicknessMm);
+  // Plate sits ABOVE the boss (z: bossHeightMm -> bossHeightMm+plateThicknessMm)
+  // -- its own top face (the far end from the boss) is the glue-to-ceiling
+  // surface; its bottom face is where it welds to the boss beneath it.
+  const plate = loftProfiles(plateProfile, plateProfile, bossHeightMm, bossHeightMm + plateThicknessMm);
 
-  // The boss sits on top of the plate (its own bottom flush with the
-  // plate's own top face), same "boss reaches the ceiling" idea as the
-  // in-place version -- here the plate's top IS the ceiling it welds into.
-  const bossBottomZ = plateThicknessMm;
   const boss = applyTransformToMesh(createCylinderMesh(bossDiameterMm, bossHeightMm, CYLINDER_SEGMENTS), {
     position: [params.stemOffsetXMm, params.stemOffsetYMm, bossBottomZ + bossHeightMm / 2],
     rotationDeg: [0, 0, 0],

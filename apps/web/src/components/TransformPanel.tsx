@@ -57,6 +57,7 @@ export function TransformPanel() {
   const node = useEditorStore((s) => (s.selectedId ? s.project.nodes[s.selectedId] : null));
   const updateDirect = useEditorStore((s) => s.updateNodeTransformDirect);
   const commit = useEditorStore((s) => s.commitTransform);
+  const setColor = useEditorStore((s) => s.setColor);
 
   const worldBox = useMemo(() => {
     if (!node) return null;
@@ -121,6 +122,19 @@ export function TransformPanel() {
   return (
     <div className="panel transform-panel" data-testid="transform-panel">
       <div className="panel-title">{node.name}</div>
+
+      <div className="transform-group">
+        <label className="number-field" style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <input
+            type="color"
+            value={node.color}
+            data-testid="field-color"
+            onChange={(e) => setColor(selectedId, e.target.value)}
+            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3f47", borderRadius: 2, background: "none" }}
+          />
+          <span>Màu (khung xem 3D)</span>
+        </label>
+      </div>
 
       {node.parametric && <KeycapPanel nodeId={selectedId} params={node.parametric.params} />}
 

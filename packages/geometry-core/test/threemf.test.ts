@@ -85,4 +85,47 @@ describe("exportMultiPart3MF", () => {
   it("throws for an empty parts list rather than producing a build with nothing in it", () => {
     expect(() => exportMultiPart3MF([])).toThrow();
   });
+
+  it("embeds a <basematerials> color for a part that supplies colorHex, referenced via pid/pindex", () => {
+    const zip = exportMultiPart3MF([{ name: "Vo keycap", mesh: createCubeMesh(5, 5, 5), colorHex: "#ff8800" }]);
+    const model = readStoredEntries(zip).get("3D/3dmodel.model")!;
+    expect(model).toContain('displaycolor="#FF8800FF"');
+    const baseId = model.match(/<basematerials id="(\d+)">/)![1];
+    expect(model).toMatch(new RegExp(`<object[^>]*pid="${baseId}" pindex="0"`));
+  });
+
+  it("gives each colored part its own pindex into ONE shared basematerials group, in part order", () => {
+    const zip = exportMultiPart3MF([
+      { name: "A", mesh: createCubeMesh(5, 5, 5) }, // no color
+      { name: "B", mesh: createCubeMesh(5, 5, 5), colorHex: "#00ff00" },
+      { name: "C", mesh: createCubeMesh(5, 5, 5), colorHex: "#0000ff" },
+    ]);
+    const model = readStoredEntries(zip).get("3D/3dmodel.model")!;
+    expect((model.match(/<basematerials/g) ?? []).length).toBe(1);
+    expect((model.match(/<base /g) ?? []).length).toBe(2);
+    // "A" (uncolored) gets no pid/pindex at all.
+    const objectA = model.match(/<object[^>]*name="A"[^>]*>/)![0];
+    expect(objectA).not.toContain("pid=");
+    const objectB = model.match(/<object[^>]*name="B"[^>]*>/)![0];
+    const objectC = model.match(/<object[^>]*name="C"[^>]*>/)![0];
+    expect(objectB).toMatch(/pindex="0"/);
+    expect(objectC).toMatch(/pindex="1"/);
+  });
+
+  it("normalizes short (#rgb) and already-8-digit hex colors the same way", () => {
+    const zip = exportMultiPart3MF([
+      { name: "Short", mesh: createCubeMesh(5, 5, 5), colorHex: "#0f0" },
+      { name: "WithAlpha", mesh: createCubeMesh(5, 5, 5), colorHex: "#11223344" },
+    ]);
+    const model = readStoredEntries(zip).get("3D/3dmodel.model")!;
+    expect(model).toContain('displaycolor="#00FF00FF"');
+    expect(model).toContain('displaycolor="#11223344"');
+  });
+
+  it("omits <basematerials> entirely when no part supplies a color -- unchanged from before this feature", () => {
+    const zip = exportMultiPart3MF([{ name: "Plain", mesh: createCubeMesh(5, 5, 5) }]);
+    const model = readStoredEntries(zip).get("3D/3dmodel.model")!;
+    expect(model).not.toContain("basematerials");
+    expect(model).not.toContain("pid=");
+  });
 });

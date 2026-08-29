@@ -401,4 +401,23 @@ describe("rename and visibility", () => {
     useEditorStore.getState().undo();
     expect(useEditorStore.getState().project.nodes[id].visible).toBe(true);
   });
+
+  it("color change is undoable", () => {
+    const store = useEditorStore.getState();
+    const id = store.addMeshNode(createCubeMesh(10, 10, 10), "Cube");
+    const original = useEditorStore.getState().project.nodes[id].color;
+    useEditorStore.getState().setColor(id, "#ff0000");
+    expect(useEditorStore.getState().project.nodes[id].color).toBe("#ff0000");
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().project.nodes[id].color).toBe(original);
+  });
+
+  it("setColor is a no-op when the color is unchanged (no extra undo step)", () => {
+    const store = useEditorStore.getState();
+    const id = store.addMeshNode(createCubeMesh(10, 10, 10), "Cube");
+    const original = useEditorStore.getState().project.nodes[id].color;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setColor(id, original);
+    expect(useEditorStore.getState().past.length).toBe(pastLengthBefore);
+  });
 });

@@ -13,6 +13,7 @@ import {
   duplicateNodeCommand,
   removeNodeCommand,
   renameNodeCommand,
+  setColorCommand,
   setKeycapParamsCommand,
   setTransformCommand,
   setVisibleCommand,
@@ -153,6 +154,7 @@ export interface EditorStore {
   duplicateNode(id: string): string | null;
   renameNode(id: string, name: string): void;
   setVisible(id: string, visible: boolean): void;
+  setColor(id: string, color: string): void;
 
   beginSplit(nodeId: string): void;
   updateSplitPlaneDirect(plane: Partial<SplitPlaneState>): void;
@@ -401,6 +403,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const node = get().project.nodes[id];
     if (!node || node.visible === visible) return;
     get().execute(setVisibleCommand(id, node.visible, visible));
+  },
+
+  setColor(id, color) {
+    const node = get().project.nodes[id];
+    if (!node || node.color === color) return;
+    get().execute(setColorCommand(id, node.color, color));
   },
 
   beginSplit(nodeId) {

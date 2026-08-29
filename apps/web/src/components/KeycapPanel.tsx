@@ -173,6 +173,27 @@ function SliderField({
   );
 }
 
+/** A native color swatch + hex readout for one keycap part's export color
+ *  (see KeycapParams.baseColorHex etc.) -- purely 3MF-export metadata, no
+ *  live viewport effect (the 3D preview always renders the single fused
+ *  mesh in one material, same as before this field existed), so this is
+ *  deliberately compact rather than styled to look like a "real" part of
+ *  the object's own appearance. */
+function ColorField({ fieldKey, label, value, onCommit }: { fieldKey: string; label: string; value: string; onCommit: (v: string) => void }) {
+  return (
+    <label className="number-field" style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+      <input
+        type="color"
+        value={value}
+        data-testid={`keycap-color-${fieldKey}`}
+        onChange={(e) => onCommit(e.target.value)}
+        style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3f47", borderRadius: 2, background: "none" }}
+      />
+      <span style={{ fontSize: 12 }}>{label}</span>
+    </label>
+  );
+}
+
 const ALIGN_OPTIONS: Array<{ value: KeycapParams["legendAlign"]; title: string }> = [
   { value: "left", title: "Căn trái" },
   { value: "center", title: "Căn giữa" },
@@ -765,6 +786,18 @@ export function KeycapPanel({
           )}
         </>
       )}
+
+      <div className="transform-group-label" style={{ marginTop: 4, marginBottom: 4 }}>
+        Màu từng lớp (xuất 3MF đa màu)
+      </div>
+      <div className="transform-row" style={{ marginBottom: 6, flexWrap: "wrap" }} title="Chỉ dùng khi xuất 'Xuất 3MF đa màu' -- không đổi màu trên khung xem 3D">
+        <ColorField fieldKey="base" label="Vỏ" value={params.baseColorHex} onCommit={(v) => commit({ baseColorHex: v })} />
+        <ColorField fieldKey="bubble" label="Nền bong bóng" value={params.bubbleColorHex} onCommit={(v) => commit({ bubbleColorHex: v })} />
+        <ColorField fieldKey="legend" label="Chữ/Icon" value={params.legendColorHex} onCommit={(v) => commit({ legendColorHex: v })} />
+        {params.stemSeparate && (
+          <ColorField fieldKey="stem" label="Chốt rời" value={params.stemColorHex} onCommit={(v) => commit({ stemColorHex: v })} />
+        )}
+      </div>
 
       <div className="split-status" data-testid="keycap-status">
         Trạng thái:{" "}

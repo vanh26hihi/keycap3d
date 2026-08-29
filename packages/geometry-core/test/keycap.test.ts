@@ -497,47 +497,55 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     expect(Math.abs(computeSignedVolume(intersection))).toBeLessThan(0.01);
   });
 
-  it("the standalone piece is a flat plate matching the keycap's own bottom footprint, with the boss+socket rising from its top", async () => {
+  it("the standalone piece is a flat plate matching the keycap's own bottom footprint, with the boss+socket hanging below it", async () => {
     const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
     const mesh = await createKeycapMesh({ switchType: "round", stemSeparate: true });
     const engine = await createBooleanEngine();
     const offsetXMm = resolved.widthMm + 2; // STEM_SEPARATE_GAP_MM
     const plateThicknessMm = Math.max(resolved.wallThicknessMm, 1.2); // MIN_PRINT_WALL_MM
+    const bossHeightMm = resolved.socketDepthMm + MIN_STEM_WALL_MM;
 
-    // Real plate material near the piece's own bottom, well away from the
-    // boss/socket at its center.
+    // Real plate material near the piece's own TOP (the glue-to-ceiling
+    // face, farthest from the boss), well away from the boss/socket at its
+    // center.
     const plateProbe = applyTransformToMesh(createCubeMesh(2, 2, 0.5), {
-      position: [offsetXMm + resolved.widthMm / 2 - 1, resolved.lengthMm / 2 - 1, plateThicknessMm / 2],
+      position: [offsetXMm + resolved.widthMm / 2 - 1, resolved.lengthMm / 2 - 1, bossHeightMm + plateThicknessMm - 0.25],
       rotationDeg: [0, 0, 0],
       scale: [1, 1, 1],
     });
     expect(Math.abs(computeSignedVolume(engine.intersect(mesh, plateProbe)))).toBeGreaterThan(0);
 
-    // The socket itself should be an actual hollow (blind) cavity opening
-    // from the boss's own top down into the plate, not solid boss material
-    // -- probe just inside that hollow (the cutter's own reach is
-    // `plateThicknessMm` up to `plateThicknessMm + socketDepthMm`; leave
-    // margin from that top edge so this doesn't land in the intentional
-    // solid floor above it).
+    // The socket must open at the boss's own free BOTTOM end (z near 0) --
+    // this is the whole point of the fix: an entrance anywhere else (e.g.
+    // up near the plate) would be sealed inside the glued assembly and
+    // unreachable by a real switch.
     const socketProbe = applyTransformToMesh(createCubeMesh(1, 1, 1), {
-      position: [offsetXMm, 0, plateThicknessMm + resolved.socketDepthMm - 1],
+      position: [offsetXMm, 0, 1],
       rotationDeg: [0, 0, 0],
       scale: [1, 1, 1],
     });
     expect(Math.abs(computeSignedVolume(engine.intersect(mesh, socketProbe)))).toBeLessThan(0.01);
 
-    // The plate's own XY footprint matches the keycap's own bottom size
-    // exactly -- this is the whole point of the plate (a flat glue joint
-    // the same size as the keycap's own base, not just the bare boss).
+    // ...and is genuinely open to the outside there, not just hollow --
+    // the piece's own lowest point must be at z=0 with nothing below it
+    // (an entrance buried inside solid material wouldn't show up as the
+    // mesh's own minimum Z).
     const pos = mesh.positions;
+    let minZInStemRegion = Infinity;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (let i = 0; i < pos.length; i += 3) {
       if (pos[i] < offsetXMm - resolved.widthMm / 2 - 0.5) continue; // skip the shell's own footprint
+      minZInStemRegion = Math.min(minZInStemRegion, pos[i + 2]);
       minX = Math.min(minX, pos[i]);
       maxX = Math.max(maxX, pos[i]);
       minY = Math.min(minY, pos[i + 1]);
       maxY = Math.max(maxY, pos[i + 1]);
     }
+    expect(minZInStemRegion).toBeCloseTo(0, 3);
+
+    // The plate's own XY footprint matches the keycap's own bottom size
+    // exactly -- this is the whole point of the plate (a flat glue joint
+    // the same size as the keycap's own base, not just the bare boss).
     expect(maxX - minX).toBeCloseTo(resolved.widthMm, 2);
     expect(maxY - minY).toBeCloseTo(resolved.lengthMm, 2);
   });

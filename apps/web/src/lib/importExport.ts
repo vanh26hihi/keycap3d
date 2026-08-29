@@ -49,11 +49,12 @@ export async function exportKeycapMultiPart3MFBlob(node: SceneNodeState): Promis
   }
   const { base, bubble, legend, stem } = await createKeycapMeshParts(node.parametric.params);
   const matrix = composeExportMatrix(node.designTransform, node.printTransform ?? null);
+  const colors = node.parametric.params;
 
-  const parts: ThreeMFPart[] = [{ name: "Vo keycap", mesh: applyMatrixToMesh(base, matrix) }];
-  if (bubble) parts.push({ name: "Nen bong bong chat", mesh: applyMatrixToMesh(bubble, matrix) });
-  if (legend) parts.push({ name: "Chu - Icon", mesh: applyMatrixToMesh(legend, matrix) });
-  if (stem) parts.push({ name: "Chot roi", mesh: applyMatrixToMesh(stem, matrix) });
+  const parts: ThreeMFPart[] = [{ name: "Vo keycap", mesh: applyMatrixToMesh(base, matrix), colorHex: colors.baseColorHex }];
+  if (bubble) parts.push({ name: "Nen bong bong chat", mesh: applyMatrixToMesh(bubble, matrix), colorHex: colors.bubbleColorHex });
+  if (legend) parts.push({ name: "Chu - Icon", mesh: applyMatrixToMesh(legend, matrix), colorHex: colors.legendColorHex });
+  if (stem) parts.push({ name: "Chot roi", mesh: applyMatrixToMesh(stem, matrix), colorHex: colors.stemColorHex });
 
   const bytes = exportMultiPart3MF(parts);
   return new Blob([bytes as BlobPart], { type: "model/3mf" });

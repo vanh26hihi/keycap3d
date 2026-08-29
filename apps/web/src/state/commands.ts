@@ -65,6 +65,22 @@ export function setVisibleCommand(nodeId: string, prev: boolean, next: boolean):
   };
 }
 
+export function setColorCommand(nodeId: string, prev: string, next: string): Command {
+  return {
+    label: `Color ${nodeId}`,
+    do(state) {
+      const node = state.nodes[nodeId];
+      if (!node) return state;
+      return { ...state, nodes: { ...state.nodes, [nodeId]: { ...node, color: next } } };
+    },
+    undo(state) {
+      const node = state.nodes[nodeId];
+      if (!node) return state;
+      return { ...state, nodes: { ...state.nodes, [nodeId]: { ...node, color: prev } } };
+    },
+  };
+}
+
 export function addNodeCommand(node: SceneNodeState): Command {
   return {
     label: `Add ${node.name}`,
