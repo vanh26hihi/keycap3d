@@ -78,6 +78,26 @@ export interface KeycapParams {
    *  normal one-piece keycap. No effect when switchType is "none".
    */
   stemSeparate: boolean;
+  /** Width/length of the standalone stem piece's own flat base plate, mm --
+   *  only meaningful when stemSeparate is on. Auto-derived (see
+   *  stemPlateAuto) to fit through the shell's own cavity opening by
+   *  default, since a plate sized to the keycap's full OUTER footprint
+   *  (widthMm/lengthMm) is too big to fit through the cavity at all -- the
+   *  cavity's own opening is inset by wallThicknessMm on every side, and
+   *  narrows further going up if topInsetMm makes the top narrower than
+   *  the bottom. Directly settable (stemPlateAuto: false) since the
+   *  auto-fit is a geometric estimate, not a guarantee for every
+   *  wall/inset/corner-radius combination -- if it's not quite right for a
+   *  particular keycap, override these two fields directly. */
+  stemPlateWidthMm: number;
+  stemPlateLengthMm: number;
+  /** When true (the default), stemPlateWidthMm/stemPlateLengthMm are
+   *  ignored and recomputed to fit the shell's own cavity opening (with a
+   *  small clearance so it isn't a forced press-fit) -- not a fixed
+   *  formula independent of the keycap's own dimensions, since the cavity
+   *  opening depends on widthMm/lengthMm/wallThicknessMm/topInsetMm
+   *  together. Set false and edit the two fields directly to override. */
+  stemPlateAuto: boolean;
   /** Cherry MX cross dimensions, mm (used when switchType === "cherry-mx").
    *  The nominal Cherry MX/MX-compatible plunger cross is commonly cited as
    *  ~4.0mm span x ~1.3mm arm width; the defaults here are that nominal size
@@ -182,6 +202,12 @@ export const DEFAULT_KEYCAP_PARAMS: KeycapParams = {
   bossDiameterMm: 5.5, // matches the auto-computed value for the defaults below (stemCrossWidthMm 4.0 + 2*MIN_STEM_WALL_MM); see resolveKeycapParams
   bossDiameterAuto: true,
   stemSeparate: false,
+  // Matches the auto-computed fit for every other default above (18.5mm
+  // keycap, 1.5mm wall, 2.5mm top inset -> a 10.5mm inner-top opening,
+  // minus STEM_PLATE_CLEARANCE_MM); see resolveKeycapParams/cavityFitMm.
+  stemPlateWidthMm: 9.9,
+  stemPlateLengthMm: 9.9,
+  stemPlateAuto: true,
   // Cross Span (4.0mm) confirmed by direct measurement against a real,
   // verified commercial MX-compatible artisan keycap's own mesh (a .3mf the
   // user provided -- vertices at the socket's entrance ring were parsed and
@@ -418,12 +444,31 @@ const STEM_PROFILES: Record<Exclude<SwitchType, "none">, StemProfile> = {
  *  Shared by resolveKeycapParams (to preview the real auto boss size) and
  *  createKeycapMesh (to actually build it), so the two can never disagree. */
 function computeCavityClearanceMm(params: KeycapParams): number {
+  const { widthMm, lengthMm } = cavityTopOpeningMm(params);
+  return Math.max(Math.min(widthMm, lengthMm) - 2 * MIN_PRINT_WALL_MM, 2 * MIN_PRINT_WALL_MM);
+}
+
+/** The cavity's own opening at its narrowest point (the top, since the
+ *  shell tapers inward going up -- see computeCavityClearanceMm's doc
+ *  comment, which this factors out of). Shared with the standalone stem
+ *  plate's own auto-size (see stemPlateAuto): a plate any bigger than
+ *  this can't physically slide up through the cavity to reach the
+ *  ceiling it needs to glue against, regardless of the boss/socket it
+ *  carries. */
+function cavityTopOpeningMm(params: KeycapParams): { widthMm: number; lengthMm: number } {
   const topWidth = Math.max(params.widthMm - 2 * params.topInsetMm, 1);
   const topLength = Math.max(params.lengthMm - 2 * params.topInsetMm, 1);
-  const innerTopWidth = Math.max(topWidth - 2 * params.wallThicknessMm, 0.5);
-  const innerTopLength = Math.max(topLength - 2 * params.wallThicknessMm, 0.5);
-  return Math.max(Math.min(innerTopWidth, innerTopLength) - 2 * MIN_PRINT_WALL_MM, 2 * MIN_PRINT_WALL_MM);
+  return {
+    widthMm: Math.max(topWidth - 2 * params.wallThicknessMm, 0.5),
+    lengthMm: Math.max(topLength - 2 * params.wallThicknessMm, 0.5),
+  };
 }
+
+/** Clearance (mm, total -- split evenly either side) subtracted from the
+ *  cavity's own opening for the stem plate's AUTO size, so the default
+ *  isn't a forced, un-insertable press-fit against the shell's own inner
+ *  wall. */
+const STEM_PLATE_CLEARANCE_MM = 0.6;
 
 /**
  * Normalizes `bossDiameterMm` against the active switch profile and current
@@ -446,7 +491,12 @@ export function resolveKeycapParams(paramsInput: Partial<KeycapParams>): KeycapP
   const minSafeBossMm = characteristicWidthMm + 2 * MIN_STEM_WALL_MM;
   const requestedBossMm = params.bossDiameterAuto ? minSafeBossMm : Math.max(params.bossDiameterMm, minSafeBossMm);
   const bossDiameterMm = Math.max(Math.min(requestedBossMm, computeCavityClearanceMm(params)), 2 * MIN_PRINT_WALL_MM);
-  return { ...params, bossDiameterMm };
+
+  if (!params.stemPlateAuto) return { ...params, bossDiameterMm };
+  const opening = cavityTopOpeningMm(params);
+  const stemPlateWidthMm = Math.max(opening.widthMm - STEM_PLATE_CLEARANCE_MM, 2 * MIN_PRINT_WALL_MM);
+  const stemPlateLengthMm = Math.max(opening.lengthMm - STEM_PLATE_CLEARANCE_MM, 2 * MIN_PRINT_WALL_MM);
+  return { ...params, bossDiameterMm, stemPlateWidthMm, stemPlateLengthMm };
 }
 
 /**
@@ -767,11 +817,15 @@ function stemPlateThicknessMm(params: KeycapParams): number {
  * Builds the boss/socket as its own free-standing, printable piece instead
  * of welding it into the shell -- see KeycapParams.stemSeparate's doc
  * comment for why (a separately-printed clip glued on afterward, matching
- * a real reference). The piece is a flat rectangular BASE PLATE -- same
- * width/length/corner-radius as the keycap's own bottom footprint, so the
- * glue joint is a flat plate-to-plate contact matching the reference photo,
- * not just the boss's own small circular footprint -- with the boss
- * standing UP from it and the socket cut into that.
+ * a real reference). The piece is a flat rectangular BASE PLATE -- sized
+ * to stemPlateWidthMm/stemPlateLengthMm (see stemPlateAuto: by default,
+ * the largest size that still fits through the shell's own cavity opening,
+ * NOT the keycap's full outer footprint -- a plate that size physically
+ * can't fit through the cavity at all to reach the ceiling it needs to
+ * glue against) -- so the glue joint is a flat plate-to-plate contact
+ * roughly matching the reference photo, not just the boss's own small
+ * circular footprint, with the boss standing UP from it and the socket
+ * cut into that.
  *
  * Orientation went through two wrong attempts before landing here, both
  * worth recording so this doesn't regress back to either:
@@ -800,9 +854,10 @@ function stemPlateThicknessMm(params: KeycapParams): number {
  * instead of its bottom, with NO reinforcement ribs (those exist purely to
  * weld the boss into the surrounding shell wall, which doesn't apply once
  * it's detached). Positioned beside the shell's own footprint (offset in
- * +X by its own width plus a fixed gap, since the plate matches the
- * shell's own full width) so merging this into the shell's own mesh lays
- * both pieces out ready to print together on one bed and glue afterward.
+ * +X by half the shell's own outer width, plus half this piece's own
+ * plate width, plus a fixed gap) so merging this into the shell's own
+ * mesh lays both pieces out ready to print together on one bed and glue
+ * afterward.
  */
 function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): MeshBuffer {
   const profile = STEM_PROFILES[params.switchType as Exclude<SwitchType, "none">];
@@ -814,7 +869,17 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
   const socketDepthMm = Math.max(bossHeightMm - bossFloorMm, 0.5);
 
   const plateThicknessMm = stemPlateThicknessMm(params);
-  const plateProfile = roundedRectProfile(params.widthMm, params.lengthMm, params.cornerRadiusMm, PROFILE_SEGMENTS_PER_CORNER);
+  // Corner radius clamped to the PLATE's own (much smaller than the
+  // keycap's outer footprint) size -- params.cornerRadiusMm was tuned for
+  // the full keycap, and could easily exceed half this plate's own
+  // width/length, which would produce a degenerate rounded-rect profile.
+  const plateCornerRadiusMm = Math.min(params.cornerRadiusMm, Math.min(params.stemPlateWidthMm, params.stemPlateLengthMm) / 2 - 0.1);
+  const plateProfile = roundedRectProfile(
+    params.stemPlateWidthMm,
+    params.stemPlateLengthMm,
+    Math.max(plateCornerRadiusMm, 0),
+    PROFILE_SEGMENTS_PER_CORNER,
+  );
   // Plate's own bottom face (z=0) sits on the print bed -- this is the
   // glue-to-ceiling face once the piece is flipped for assembly.
   const plate = loftProfiles(plateProfile, plateProfile, 0, plateThicknessMm);
@@ -848,8 +913,9 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
   }
 
   // Shell's own right edge (widthMm/2) + this piece's own half-width
-  // (also widthMm/2, since the plate matches the shell's footprint) + gap.
-  const offsetXMm = params.widthMm + STEM_SEPARATE_GAP_MM;
+  // (its own stemPlateWidthMm/2, which no longer matches the shell's -- see
+  // stemPlateAuto) + a fixed gap.
+  const offsetXMm = params.widthMm / 2 + params.stemPlateWidthMm / 2 + STEM_SEPARATE_GAP_MM;
   return applyTransformToMesh(mesh, { position: [offsetXMm, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
 }
 

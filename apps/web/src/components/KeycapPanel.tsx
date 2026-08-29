@@ -646,6 +646,37 @@ export function KeycapPanel({
               <span>Tự động (kích thước an toàn tối thiểu)</span>
             </label>
           </div>
+
+          {params.stemSeparate && (
+            <div className="transform-row" style={{ marginBottom: 6, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <NumberField
+                fieldKey="stemPlateWidth"
+                label="Rộng đế chốt"
+                title="Kích thước đế phẳng của chốt rời -- mặc định tự vừa khít lỗ hõm đáy keycap (không phải bằng mặt ngoài keycap, vì đế to bằng mặt ngoài sẽ không lọt qua lỗ hõm để dán vào trần được)"
+                value={params.stemPlateWidthMm}
+                step={0.1}
+                min={2}
+                onCommit={(v) => commit({ stemPlateWidthMm: v, stemPlateAuto: false })}
+              />
+              <NumberField
+                fieldKey="stemPlateLength"
+                label="Dài đế chốt"
+                value={params.stemPlateLengthMm}
+                step={0.1}
+                min={2}
+                onCommit={(v) => commit({ stemPlateLengthMm: v, stemPlateAuto: false })}
+              />
+              <label className="number-field" style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={params.stemPlateAuto}
+                  data-testid="keycap-field-stemPlateAuto"
+                  onChange={(e) => commit({ stemPlateAuto: e.target.checked })}
+                />
+                <span>Tự động (vừa khít lỗ hõm)</span>
+              </label>
+            </div>
+          )}
         </>
       )}
 

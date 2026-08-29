@@ -501,7 +501,7 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
     const mesh = await createKeycapMesh({ switchType: "round", stemSeparate: true });
     const engine = await createBooleanEngine();
-    const offsetXMm = resolved.widthMm + 2; // STEM_SEPARATE_GAP_MM
+    const offsetXMm = resolved.widthMm / 2 + resolved.stemPlateWidthMm / 2 + 2; // STEM_SEPARATE_GAP_MM
     const plateThicknessMm = Math.max(resolved.wallThicknessMm, 1.2); // MIN_PRINT_WALL_MM
     const bossHeightMm = resolved.socketDepthMm + MIN_STEM_WALL_MM;
     const bossTipZ = plateThicknessMm + bossHeightMm;
@@ -510,8 +510,8 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     // bed / glue-to-ceiling face), well away from the boss/socket at its
     // center -- this is the whole point of the fix: printable flat on the
     // bed, no supports, instead of suspended above a thin boss.
-    const plateProbe = applyTransformToMesh(createCubeMesh(2, 2, 0.5), {
-      position: [offsetXMm + resolved.widthMm / 2 - 1, resolved.lengthMm / 2 - 1, 0.25],
+    const plateProbe = applyTransformToMesh(createCubeMesh(1, 1, 0.5), {
+      position: [offsetXMm + resolved.stemPlateWidthMm / 2 - 0.7, resolved.stemPlateLengthMm / 2 - 0.7, 0.25],
       rotationDeg: [0, 0, 0],
       scale: [1, 1, 1],
     });
@@ -538,7 +538,7 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     let maxZInStemRegion = -Infinity;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (let i = 0; i < pos.length; i += 3) {
-      if (pos[i] < offsetXMm - resolved.widthMm / 2 - 0.5) continue; // skip the shell's own footprint
+      if (pos[i] < resolved.widthMm / 2 + 0.5) continue; // skip the shell's own footprint
       maxZInStemRegion = Math.max(maxZInStemRegion, pos[i + 2]);
       minX = Math.min(minX, pos[i]);
       maxX = Math.max(maxX, pos[i]);
@@ -547,11 +547,51 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
     }
     expect(maxZInStemRegion).toBeCloseTo(bossTipZ, 3);
 
-    // The plate's own XY footprint matches the keycap's own bottom size
-    // exactly -- this is the whole point of the plate (a flat glue joint
-    // the same size as the keycap's own base, not just the bare boss).
-    expect(maxX - minX).toBeCloseTo(resolved.widthMm, 2);
-    expect(maxY - minY).toBeCloseTo(resolved.lengthMm, 2);
+    // The plate's own XY footprint matches its OWN resolved size (NOT the
+    // keycap's full outer footprint -- see stemPlateAuto's fit-through-the-
+    // cavity fix).
+    expect(maxX - minX).toBeCloseTo(resolved.stemPlateWidthMm, 2);
+    expect(maxY - minY).toBeCloseTo(resolved.stemPlateLengthMm, 2);
+  });
+
+  it("stemPlateAuto sizes the plate to fit through the shell's own cavity opening, not the keycap's full outer footprint", async () => {
+    const resolved = resolveKeycapParams({ switchType: "round", stemSeparate: true });
+    // The auto plate must be smaller than the keycap's own outer
+    // footprint -- the whole point of the fix (a plate sized to the outer
+    // footprint physically can't fit through the cavity's own opening,
+    // which is inset by wallThicknessMm and narrows further under
+    // topInsetMm going up).
+    expect(resolved.stemPlateWidthMm).toBeLessThan(resolved.widthMm);
+    expect(resolved.stemPlateLengthMm).toBeLessThan(resolved.lengthMm);
+    // ...and specifically no bigger than the cavity's own narrowest
+    // opening (the inner-top cross-section), so it can actually slide all
+    // the way up to the ceiling it needs to glue against.
+    const topWidth = resolved.widthMm - 2 * resolved.topInsetMm;
+    const topLength = resolved.lengthMm - 2 * resolved.topInsetMm;
+    const innerTopWidth = topWidth - 2 * resolved.wallThicknessMm;
+    const innerTopLength = topLength - 2 * resolved.wallThicknessMm;
+    expect(resolved.stemPlateWidthMm).toBeLessThanOrEqual(innerTopWidth);
+    expect(resolved.stemPlateLengthMm).toBeLessThanOrEqual(innerTopLength);
+  });
+
+  it("stemPlateAuto: false lets a manual stemPlateWidthMm/stemPlateLengthMm override take effect, even past the auto-fit size", async () => {
+    const resolved = resolveKeycapParams({
+      switchType: "round",
+      stemSeparate: true,
+      stemPlateAuto: false,
+      stemPlateWidthMm: 25,
+      stemPlateLengthMm: 30,
+    });
+    expect(resolved.stemPlateWidthMm).toBe(25);
+    expect(resolved.stemPlateLengthMm).toBe(30);
+    const mesh = await createKeycapMesh({
+      switchType: "round",
+      stemSeparate: true,
+      stemPlateAuto: false,
+      stemPlateWidthMm: 25,
+      stemPlateLengthMm: 30,
+    });
+    expect(validateMesh(mesh).isWatertight).toBe(true);
   });
 
   it("stays watertight for both switch profiles, with no reinforcement ribs (nothing to weld into)", async () => {
