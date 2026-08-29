@@ -1,6 +1,6 @@
 import type { Transform, MeshBuffer } from "@keycap-web/geometry-core";
 import type { KeycapParams } from "@keycap-web/geometry-core/keycap";
-import type { ProjectState, SceneNodeState } from "./types";
+import type { KeycapPartsForRender, ProjectState, SceneNodeState } from "./types";
 
 /**
  * Command pattern per the blueprint: each command stores only the small
@@ -191,8 +191,10 @@ export function setKeycapParamsCommand(
   nodeId: string,
   prevParams: KeycapParams,
   prevMesh: MeshBuffer,
+  prevParts: KeycapPartsForRender,
   nextParams: KeycapParams,
   nextMesh: MeshBuffer,
+  nextParts: KeycapPartsForRender,
 ): Command {
   return {
     label: `Edit keycap ${nodeId}`,
@@ -203,7 +205,7 @@ export function setKeycapParamsCommand(
         ...state,
         nodes: {
           ...state.nodes,
-          [nodeId]: { ...node, mesh: nextMesh, parametric: { generatorId: "keycapV1", params: nextParams } },
+          [nodeId]: { ...node, mesh: nextMesh, parametric: { generatorId: "keycapV1", params: nextParams, parts: nextParts } },
         },
       };
     },
@@ -214,7 +216,7 @@ export function setKeycapParamsCommand(
         ...state,
         nodes: {
           ...state.nodes,
-          [nodeId]: { ...node, mesh: prevMesh, parametric: { generatorId: "keycapV1", params: prevParams } },
+          [nodeId]: { ...node, mesh: prevMesh, parametric: { generatorId: "keycapV1", params: prevParams, parts: prevParts } },
         },
       };
     },

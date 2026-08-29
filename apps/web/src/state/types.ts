@@ -58,8 +58,26 @@ export interface SceneNodeState {
    * in sync with whatever generated the current `mesh` (see
    * `setKeycapParamsCommand`) so the panel always reflects reality, never a
    * stale "what I asked for" separate from "what's actually there".
+   *
+   * `parts` is the SAME keycap decomposed into its separate objects (see
+   * geometry-core's createKeycapMeshParts) -- computed alongside `mesh`
+   * purely so the viewport can render each part in its own per-part color
+   * (baseColorHex/bubbleColorHex/legendColorHex/stemColorHex) instead of
+   * one flat node.color; `mesh` (the real, boolean-fused solid) stays the
+   * one used for STL/single-mesh export and bounding-box math -- `parts`'
+   * pieces are NOT boolean-unioned with each other (bubble/legend can sit
+   * flush against/inside the base), so they're only valid to render, never
+   * to export as one merged solid.
    */
-  parametric: { generatorId: "keycapV1"; params: KeycapParams } | null;
+  parametric: { generatorId: "keycapV1"; params: KeycapParams; parts: KeycapPartsForRender } | null;
+}
+
+/** See SceneNodeState.parametric's doc comment on `parts`. */
+export interface KeycapPartsForRender {
+  base: MeshBuffer;
+  bubble: MeshBuffer | null;
+  legend: MeshBuffer | null;
+  stem: MeshBuffer | null;
 }
 
 export interface ProjectState {

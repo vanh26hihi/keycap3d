@@ -80,9 +80,31 @@ function SceneNodeMesh({ id }: { id: string }) {
   const isDragging = useEditorStore((s) => s.draggingNodeId === id || s.draggingGroupIds.includes(id));
 
   const geometry = useMemo(() => (node ? meshBufferToBufferGeometry(node.mesh) : null), [node]);
+  // Per-part geometries (see KeycapPartsForRender) -- only meaningful for a
+  // keycap whose bubble/legend/stem actually exist as separate volumes
+  // (an emboss legend, a bubble background, a separated stem); an engraved
+  // legend has no material of its own to color (it's a hole cut into
+  // `base`, not a volume), so it stays folded into `parts.base` same as
+  // the single fused mesh, and simply isn't independently colorable here
+  // either -- physically correct, not a gap in this rendering.
+  const partGeometries = useMemo(() => {
+    const parts = node?.parametric?.parts;
+    if (!parts) return null;
+    return {
+      base: meshBufferToBufferGeometry(parts.base),
+      bubble: parts.bubble ? meshBufferToBufferGeometry(parts.bubble) : null,
+      legend: parts.legend ? meshBufferToBufferGeometry(parts.legend) : null,
+      stem: parts.stem ? meshBufferToBufferGeometry(parts.stem) : null,
+    };
+  }, [node]);
 
   if (!node || !node.visible || !geometry) return null;
   if (isolatedNodeId && isolatedNodeId !== id) return null;
+
+  const keycapParams = node.parametric?.params;
+  const showParts = !!(partGeometries && keycapParams && (partGeometries.bubble || partGeometries.legend || partGeometries.stem));
+  const emissive = isSelected ? "#3a5a8c" : "#000000";
+  const emissiveIntensity = isSelected ? 0.35 : 0;
 
   return (
     <>
@@ -106,29 +128,46 @@ function SceneNodeMesh({ id }: { id: string }) {
           else select(id);
         }}
       >
-        <mesh geometry={geometry}>
-          {/* flatShading: this is CAD/mechanical geometry -- sharp edges
-              everywhere (letter/icon relief, boss walls, keycap bevels),
-              not an organic smooth-curved model. Without it,
-              meshBufferToBufferGeometry's fallback computeVertexNormals()
-              averages face normals across every SHARED vertex, including
-              ones that sit on a genuine hard edge between two very
-              differently-angled faces (e.g. a glyph's flat top meeting its
-              vertical side wall) -- producing garbage blended normals that
-              render as a jagged/crumpled mess under lighting, especially
-              visible on small sharp-cornered features like embossed
-              letters. flatShading derives each triangle's normal directly
-              in the fragment shader instead, matching how any slicer
-              (which only ever reads face-derived normals from an STL,
-              never vertex normals) already renders the exact same mesh
-              correctly. */}
-          <meshStandardMaterial
-            color={node.color}
-            emissive={isSelected ? "#3a5a8c" : "#000000"}
-            emissiveIntensity={isSelected ? 0.35 : 0}
-            flatShading
-          />
-        </mesh>
+        {/* flatShading throughout: this is CAD/mechanical geometry -- sharp
+            edges everywhere (letter/icon relief, boss walls, keycap
+            bevels), not an organic smooth-curved model. Without it,
+            meshBufferToBufferGeometry's fallback computeVertexNormals()
+            averages face normals across every SHARED vertex, including
+            ones that sit on a genuine hard edge between two very
+            differently-angled faces (e.g. a glyph's flat top meeting its
+            vertical side wall) -- producing garbage blended normals that
+            render as a jagged/crumpled mess under lighting, especially
+            visible on small sharp-cornered features like embossed
+            letters. flatShading derives each triangle's normal directly
+            in the fragment shader instead, matching how any slicer (which
+            only ever reads face-derived normals from an STL, never vertex
+            normals) already renders the exact same mesh correctly. */}
+        {showParts && keycapParams ? (
+          <>
+            <mesh geometry={partGeometries!.base}>
+              <meshStandardMaterial color={keycapParams.baseColorHex} emissive={emissive} emissiveIntensity={emissiveIntensity} flatShading />
+            </mesh>
+            {partGeometries!.bubble && (
+              <mesh geometry={partGeometries!.bubble}>
+                <meshStandardMaterial color={keycapParams.bubbleColorHex} emissive={emissive} emissiveIntensity={emissiveIntensity} flatShading />
+              </mesh>
+            )}
+            {partGeometries!.legend && (
+              <mesh geometry={partGeometries!.legend}>
+                <meshStandardMaterial color={keycapParams.legendColorHex} emissive={emissive} emissiveIntensity={emissiveIntensity} flatShading />
+              </mesh>
+            )}
+            {partGeometries!.stem && (
+              <mesh geometry={partGeometries!.stem}>
+                <meshStandardMaterial color={keycapParams.stemColorHex} emissive={emissive} emissiveIntensity={emissiveIntensity} flatShading />
+              </mesh>
+            )}
+          </>
+        ) : (
+          <mesh geometry={geometry}>
+            <meshStandardMaterial color={node.color} emissive={emissive} emissiveIntensity={emissiveIntensity} flatShading />
+          </mesh>
+        )}
       </group>
       {isSelected && selectedIds.length === 1 && group && !splitActive && (
         <TransformControls

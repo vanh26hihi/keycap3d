@@ -23,12 +23,19 @@ import {
 import {
   cloneProjectState,
   emptyProjectState,
+  type KeycapPartsForRender,
   type NodeOrigin,
   type ProjectState,
   type SceneNodeState,
 } from "./types";
 import { splitByPlane, planeNormalFromRotationDeg } from "../lib/splitEngine";
-import { createKeycapMesh, resolveKeycapParams, DEFAULT_KEYCAP_PARAMS, type KeycapParams } from "@keycap-web/geometry-core/keycap";
+import {
+  createKeycapMesh,
+  createKeycapMeshParts,
+  resolveKeycapParams,
+  DEFAULT_KEYCAP_PARAMS,
+  type KeycapParams,
+} from "@keycap-web/geometry-core/keycap";
 import { loadSavedDefaultParams } from "../lib/keycapDefaults";
 
 export type TransformMode = "translate" | "rotate" | "scale";
@@ -608,7 +615,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const params: KeycapParams = resolveKeycapParams(paramsOverride ?? loadSavedDefaultParams() ?? {});
     set({ keycapStatus: "generating", keycapError: null });
     try {
-      const mesh = await createKeycapMesh(params);
+      const [mesh, parts] = await Promise.all([createKeycapMesh(params), createKeycapMeshParts(params)]);
       const id = nextId();
       const node: SceneNodeState = {
         id,
@@ -624,7 +631,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         origin: { kind: "primitive" },
         assemblyId: null,
         role: null,
-        parametric: { generatorId: "keycapV1", params },
+        parametric: { generatorId: "keycapV1", params, parts },
       };
       get().execute(addNodeCommand(node));
       set({ selectedId: id, selectedIds: [id], keycapStatus: "idle" });
@@ -648,7 +655,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       set({ keycapStatus: "generating", keycapError: null });
       try {
-        const nextMesh = await createKeycapMesh(nextParams);
+        const [nextMesh, nextParts] = await Promise.all([createKeycapMesh(nextParams), createKeycapMeshParts(nextParams)]);
         // Re-read the node: it might have been deleted while the (async)
         // generator was running.
         const current = get().project.nodes[id];
@@ -656,7 +663,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           set({ keycapStatus: "idle" });
           return;
         }
-        get().execute(setKeycapParamsCommand(id, prevParams, current.mesh, nextParams, nextMesh));
+        get().execute(
+          setKeycapParamsCommand(id, prevParams, current.mesh, current.parametric.parts, nextParams, nextMesh, nextParts),
+        );
         set({ keycapStatus: "idle" });
       } catch (err) {
         set({ keycapStatus: "error", keycapError: err instanceof Error ? err.message : String(err) });
@@ -676,15 +685,23 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const prevParams = node.parametric.params;
         const nextParams: KeycapParams = resolveKeycapParams({ ...prevParams, ...partial });
         if (JSON.stringify(prevParams) === JSON.stringify(nextParams)) return null; // no-op for this node
-        return { id, prevParams, prevMesh: node.mesh, nextParams };
+        return { id, prevParams, prevMesh: node.mesh, prevParts: node.parametric.parts, nextParams };
       })
-      .filter((t): t is { id: string; prevParams: KeycapParams; prevMesh: MeshBuffer; nextParams: KeycapParams } => t !== null);
+      .filter(
+        (
+          t,
+        ): t is { id: string; prevParams: KeycapParams; prevMesh: MeshBuffer; prevParts: KeycapPartsForRender; nextParams: KeycapParams } =>
+          t !== null,
+      );
 
     if (targets.length === 0) return;
 
     set({ keycapStatus: "generating", keycapError: null });
     try {
-      const nextMeshes = await Promise.all(targets.map((t) => createKeycapMesh(t.nextParams)));
+      const [nextMeshes, nextPartsList] = await Promise.all([
+        Promise.all(targets.map((t) => createKeycapMesh(t.nextParams))),
+        Promise.all(targets.map((t) => createKeycapMeshParts(t.nextParams))),
+      ]);
       const commands: Command[] = [];
       for (let i = 0; i < targets.length; i++) {
         const t = targets[i];
@@ -692,7 +709,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         // parallel) generators were running.
         const current = get().project.nodes[t.id];
         if (!current || !current.parametric) continue;
-        commands.push(setKeycapParamsCommand(t.id, t.prevParams, current.mesh, t.nextParams, nextMeshes[i]));
+        commands.push(
+          setKeycapParamsCommand(t.id, t.prevParams, current.mesh, current.parametric.parts, t.nextParams, nextMeshes[i], nextPartsList[i]),
+        );
       }
       if (commands.length > 0) {
         get().execute(batchCommand(commands, `Edit ${commands.length} keycaps`));
