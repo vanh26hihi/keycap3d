@@ -1018,20 +1018,43 @@ describe("createKeycapMeshParts: multi-color export (base/bubble/legend as separ
     expect(validateMesh(parts.legend!).isWatertight).toBe(true);
   });
 
-  it("with an ENGRAVE legend, both the legend AND its bubble background fold into base -- neither is a separate part", async () => {
-    // A cut can't be its own separate printable object, and cutting into a
-    // SEPARATE bubble part while leaving base untouched would just leave a
-    // hole in one part with nothing sensible behind it -- simplest correct
-    // behavior is folding the whole raised-plaque-plus-engraved-hole
-    // combination into base as one object when the legend is engraved.
+  it("with an ENGRAVE legend, the bubble background folds into base, but the legend is exposed as its own colorable 'insert'", async () => {
+    // The bubble + engrave cut still fold into ONE watertight `base` object
+    // (cutting into a separate bubble part while leaving base untouched
+    // would just leave an unrelated hole in one part with nothing sensible
+    // behind it -- simplest correct behavior is folding the raised plaque
+    // into base before cutting). The legend itself, though, IS exposed as
+    // `parts.legend` -- the exact same volume that was cut out of base,
+    // returned a second time as its own object so an AMS-equipped printer
+    // can fill that recess with a contrasting color (a real two-color
+    // engraved-text technique, not a boolean-correctness shortcut).
     const parts = await createKeycapMeshParts({ legendText: "A", legendMode: "engrave", legendBubble: true });
-    expect(parts.legend).toBeNull();
+    expect(parts.legend).not.toBeNull();
     expect(parts.bubble).toBeNull();
     expect(validateMesh(parts.base).isWatertight).toBe(true);
+    expect(validateMesh(parts.legend!).isWatertight).toBe(true);
     // The bubble + engrave cut are still really present in base, not
     // silently dropped -- volume differs from a plain no-legend keycap.
     const plainBase = await createKeycapMesh({});
     expect(computeSignedVolume(parts.base)).not.toBeCloseTo(computeSignedVolume(plainBase), 1);
+  });
+
+  it("an engraved legend's 'insert' exactly fills the recess it was cut from -- unioning it back into base recreates the un-cut solid", async () => {
+    // Confirms `parts.legend` for an engrave really is the same volume
+    // subtracted from base (not some unrelated/offset shape): since the
+    // insert exactly plugs a hole in base rather than overlapping any
+    // existing material, the union's volume should be EXACTLY the sum of
+    // the two (base's own volume, which already has the hole, plus the
+    // insert's own volume) -- if the insert were even slightly offset or
+    // the wrong shape, the union would either leave a gap (volume too
+    // small) or overlap base's own material (volume too small in a
+    // different way, from the overlapping region only counting once).
+    const parts = await createKeycapMeshParts({ legendText: "A", legendMode: "engrave", legendBubble: true });
+    const engine = await createBooleanEngine();
+    const filledBack = engine.union(parts.base, parts.legend!);
+    expect(validateMesh(filledBack).isWatertight).toBe(true);
+    const expectedVolume = computeSignedVolume(parts.base) + Math.abs(computeSignedVolume(parts.legend!));
+    expect(computeSignedVolume(filledBack)).toBeCloseTo(expectedVolume, 3);
   });
 
   it("reassembling the parts (union base+bubble+legend) reproduces the same single-mesh result createKeycapMesh returns", async () => {

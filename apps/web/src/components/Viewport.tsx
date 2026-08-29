@@ -81,12 +81,13 @@ function SceneNodeMesh({ id }: { id: string }) {
 
   const geometry = useMemo(() => (node ? meshBufferToBufferGeometry(node.mesh) : null), [node]);
   // Per-part geometries (see KeycapPartsForRender) -- only meaningful for a
-  // keycap whose bubble/legend/stem actually exist as separate volumes
-  // (an emboss legend, a bubble background, a separated stem); an engraved
-  // legend has no material of its own to color (it's a hole cut into
-  // `base`, not a volume), so it stays folded into `parts.base` same as
-  // the single fused mesh, and simply isn't independently colorable here
-  // either -- physically correct, not a gap in this rendering.
+  // keycap whose bubble/legend/stem actually exist as separate volumes to
+  // preview: an emboss legend, a bubble background, a separated stem, or
+  // (see createKeycapMeshParts) an engraved legend's own "insert" -- the
+  // same volume that was cut out of `base`, previewed here in its own
+  // color even though it has no material of its own once printed as a
+  // single color; an AMS-equipped printer can still fill that recess with
+  // a contrasting filament, which is what this previews.
   const partGeometries = useMemo(() => {
     const parts = node?.parametric?.parts;
     if (!parts) return null;

@@ -1063,15 +1063,22 @@ export async function createKeycapMesh(paramsInput: Partial<KeycapParams> = {}):
  * Builds the SAME keycap as `createKeycapMesh`, but keeps the legend's
  * bubble background and the legend itself as separate objects instead of
  * unioning them into one solid -- for exporting a multi-color 3MF where
- * each part gets its own filament/AMS slot in the slicer. Only meaningful
- * for an EMBOSS legend: an engraved legend is a hole cut into whatever
- * surface it sits on, not a separate volume of material, so FDM multi-color
- * printing can't target it independently. When legendMode is "engrave",
- * BOTH the legend cut and its bubble background (if any) fold into `base`
- * as one object, exactly as in the single-mesh path -- a cut can't be its
- * own printable object, and leaving the bubble as a separate part with an
- * unrelated hole in it (while `base` underneath stays untouched) wouldn't
- * correspond to anything printable either.
+ * each part gets its own filament/AMS slot in the slicer.
+ *
+ * An emboss legend is a real separate volume (`legend` is simply not
+ * unioned into `base`). An engraved legend has no material of its own --
+ * it's a hole cut into whatever surface it sits on -- but an AMS-equipped
+ * printer can still give it a contrasting color: `legend` is ALSO the
+ * exact volume that was cut out of `base` (the "insert" that would fill
+ * the recess flush), returned here as its own object even though it was
+ * ALSO subtracted from `base` to make the recess -- a slicer that assigns
+ * it a different filament than `base` and prints both at the same layers
+ * (a real technique for two-color engraved text, not a hack) gets a
+ * recessed, contrasting-color legend, instead of one that can only ever
+ * read as `base`'s own color with no fill. Its own bubble background (if
+ * any) still folds into `base` in the engrave case either way, since the
+ * recess needs to cut through whichever surface it's actually sitting on
+ * (the bubble if present, else the bare top) as one watertight solid.
  *
  * `stem` (see KeycapParams.stemSeparate) is kept as its own object here --
  * unlike the single-mesh `createKeycapMesh` path, which merges it into one
@@ -1098,7 +1105,12 @@ export async function createKeycapMeshParts(
 
   if (legendMode === "engrave") {
     if (bubbleMesh) base = engine.union(base, bubbleMesh);
-    if (legendMesh) base = engine.subtract(base, legendMesh);
+    if (legendMesh) {
+      base = engine.subtract(base, legendMesh);
+      // Same volume, exposed a second time as its own colorable "insert"
+      // filling the recess -- see this function's doc comment.
+      legend = legendMesh;
+    }
   } else {
     bubble = bubbleMesh;
     legend = legendMesh;
