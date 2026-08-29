@@ -421,3 +421,39 @@ describe("rename and visibility", () => {
     expect(useEditorStore.getState().past.length).toBe(pastLengthBefore);
   });
 });
+
+describe("updateKeycapParams: rapid successive edits to the same node don't race", () => {
+  it("two overlapping calls (fired without awaiting the first) both land -- neither silently discards the other", async () => {
+    const store = useEditorStore.getState();
+    const id = await store.addKeycapNode();
+    // Fire both before either has a chance to finish its own async mesh
+    // regeneration and write back -- this is exactly the sequence that
+    // used to lose the first edit (whichever call's write landed last
+    // would overwrite the store with a snapshot based on stale params
+    // that didn't yet include the other call's change).
+    const p1 = useEditorStore.getState().updateKeycapParams(id, { legendText: "A", legendMode: "emboss" });
+    const p2 = useEditorStore.getState().updateKeycapParams(id, { legendColorHex: "#ff0000" });
+    await Promise.all([p1, p2]);
+
+    const finalParams = useEditorStore.getState().project.nodes[id].parametric!.params;
+    expect(finalParams.legendText).toBe("A");
+    expect(finalParams.legendMode).toBe("emboss");
+    expect(finalParams.legendColorHex).toBe("#ff0000");
+  });
+
+  it("three overlapping calls all land, regardless of fire order", async () => {
+    const store = useEditorStore.getState();
+    const id = await store.addKeycapNode();
+    const calls = [
+      useEditorStore.getState().updateKeycapParams(id, { widthMm: 20 }),
+      useEditorStore.getState().updateKeycapParams(id, { lengthMm: 21 }),
+      useEditorStore.getState().updateKeycapParams(id, { baseColorHex: "#00ff00" }),
+    ];
+    await Promise.all(calls);
+
+    const finalParams = useEditorStore.getState().project.nodes[id].parametric!.params;
+    expect(finalParams.widthMm).toBe(20);
+    expect(finalParams.lengthMm).toBe(21);
+    expect(finalParams.baseColorHex).toBe("#00ff00");
+  });
+});

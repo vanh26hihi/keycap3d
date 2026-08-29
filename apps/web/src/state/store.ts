@@ -214,6 +214,31 @@ function planeSizeForNode(node: SceneNodeState): number {
   return Math.max(maxDim * 2.5, 40);
 }
 
+/**
+ * Serializes async keycap-param updates PER NODE. Without this, two rapid
+ * `updateKeycapParams(id, ...)` calls for the SAME node race: each one
+ * reads `node.parametric.params` at its own call start (before either has
+ * written back), so the second call's merge is based on a snapshot that
+ * doesn't yet include the first call's edit -- whichever call's async mesh
+ * regeneration finishes LAST then overwrites the store with its own
+ * result, silently discarding the other edit entirely (e.g. quickly
+ * setting the legend text/mode and then a color right after: the color
+ * commit can finish last and reset the legend back to blank). Chaining
+ * each new call onto the previous one for the same id -- so its
+ * read-modify-write only starts once the prior one has actually landed in
+ * the store -- removes the race without limiting different nodes' updates,
+ * which still happen fully in parallel. */
+const keycapUpdateQueues = new Map<string, Promise<void>>();
+
+function enqueueKeycapUpdate(id: string, run: () => Promise<void>): Promise<void> {
+  const prior = keycapUpdateQueues.get(id) ?? Promise.resolve();
+  const next = prior.then(run, run);
+  // Swallow so one failed update doesn't wedge the queue for this node
+  // forever -- each `run` already reports its own error via keycapError.
+  keycapUpdateQueues.set(id, next.catch(() => {}));
+  return next;
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   project: emptyProjectState(),
   selectedId: null,
@@ -611,27 +636,32 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   async updateKeycapParams(id, partial) {
-    const node = get().project.nodes[id];
-    if (!node || !node.parametric) return;
-    const prevParams = node.parametric.params;
-    const nextParams: KeycapParams = resolveKeycapParams({ ...prevParams, ...partial });
-    if (JSON.stringify(prevParams) === JSON.stringify(nextParams)) return; // no-op edit, don't pollute history
+    return enqueueKeycapUpdate(id, async () => {
+      // Read INSIDE the queued task, not before enqueueing -- this must
+      // see whatever the previous queued update (if any) already wrote,
+      // which is exactly what queuing guarantees.
+      const node = get().project.nodes[id];
+      if (!node || !node.parametric) return;
+      const prevParams = node.parametric.params;
+      const nextParams: KeycapParams = resolveKeycapParams({ ...prevParams, ...partial });
+      if (JSON.stringify(prevParams) === JSON.stringify(nextParams)) return; // no-op edit, don't pollute history
 
-    set({ keycapStatus: "generating", keycapError: null });
-    try {
-      const nextMesh = await createKeycapMesh(nextParams);
-      // Re-read the node: it might have been deleted/changed while the
-      // (async) generator was running.
-      const current = get().project.nodes[id];
-      if (!current || !current.parametric) {
+      set({ keycapStatus: "generating", keycapError: null });
+      try {
+        const nextMesh = await createKeycapMesh(nextParams);
+        // Re-read the node: it might have been deleted while the (async)
+        // generator was running.
+        const current = get().project.nodes[id];
+        if (!current || !current.parametric) {
+          set({ keycapStatus: "idle" });
+          return;
+        }
+        get().execute(setKeycapParamsCommand(id, prevParams, current.mesh, nextParams, nextMesh));
         set({ keycapStatus: "idle" });
-        return;
+      } catch (err) {
+        set({ keycapStatus: "error", keycapError: err instanceof Error ? err.message : String(err) });
       }
-      get().execute(setKeycapParamsCommand(id, prevParams, current.mesh, nextParams, nextMesh));
-      set({ keycapStatus: "idle" });
-    } catch (err) {
-      set({ keycapStatus: "error", keycapError: err instanceof Error ? err.message : String(err) });
-    }
+    });
   },
 
   async updateKeycapParamsBatch(ids, partial) {

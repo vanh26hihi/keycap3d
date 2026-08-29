@@ -771,30 +771,38 @@ function stemPlateThicknessMm(params: KeycapParams): number {
  * width/length/corner-radius as the keycap's own bottom footprint, so the
  * glue joint is a flat plate-to-plate contact matching the reference photo,
  * not just the boss's own small circular footprint -- with the boss
- * hanging DOWN from its underside and the socket cut into that.
+ * standing UP from it and the socket cut into that.
  *
- * Orientation matters here and is easy to get backwards: the plate's OWN
- * top face is what glues to the inside of the keycap's ceiling, so the
- * boss has to hang below the plate (away from the glue face) with its
- * socket ENTRANCE at the boss's own free/bottom end -- exactly mirroring
- * the in-place version, where the boss hangs down from the shell's real
- * ceiling with its entrance at the bottom, facing the switch below. Boss
- * above the plate (entrance facing the glue face) was tried first and is
- * wrong: that entrance would open into the plate's own solid interior
- * instead of any real exterior face, so it's not actually reachable by a
- * switch once glued.
+ * Orientation went through two wrong attempts before landing here, both
+ * worth recording so this doesn't regress back to either:
+ *  1. Boss above the plate, entrance facing the plate: the entrance opened
+ *     into the plate's own solid interior instead of any real exterior
+ *     face -- unreachable by a switch once glued.
+ *  2. Boss below the plate (hanging down), entrance at the boss's free
+ *     BOTTOM end: functionally correct (mirrors the in-place boss's own
+ *     entrance-at-the-bottom), but means the plate -- the piece's one big
+ *     flat face -- sits suspended in the air above a thin boss instead of
+ *     flat on the print bed, needing supports and fighting warping for no
+ *     reason.
+ * The fix used here keeps the plate on the print bed (z=0, its own bottom
+ * face) with the boss rising from its top, and cuts the socket so the
+ * entrance opens at the boss's free TOP end instead of the bottom. This
+ * still ends up functionally identical to attempt 2 once physically
+ * assembled: glue the plate's bottom (bed) face to the keycap's ceiling,
+ * and the whole piece is upside-down relative to how it printed -- the
+ * boss now hangs down into the cavity, and its entrance (printed at the
+ * top) now faces further down, toward the switch. Same real-world result,
+ * just printable flat-on-the-bed instead of needing supports.
  *
  * Reuses the exact same boss/cutter/chamfer sizing math as the in-place
  * version (buildKeycapBase's own `switchType !== "none"` branch below),
- * just re-based so the boss's own bottom (the entrance) sits at local z=0
- * -- same as that in-place version's own bossBottomZ=0 convention when
- * there's no shell height to subtract from -- with NO reinforcement ribs
- * (those exist purely to weld the boss into the surrounding shell wall,
- * which doesn't apply once it's detached). Positioned beside the shell's
- * own footprint (offset in +X by half its width plus half this piece's own
- * plate width plus a fixed gap) so merging this into the shell's own mesh
- * lays both pieces out ready to print together on one bed and glue
- * afterward.
+ * mirrored in Z so the entrance sits at the boss's own top (bossTipZ)
+ * instead of its bottom, with NO reinforcement ribs (those exist purely to
+ * weld the boss into the surrounding shell wall, which doesn't apply once
+ * it's detached). Positioned beside the shell's own footprint (offset in
+ * +X by its own width plus a fixed gap, since the plate matches the
+ * shell's own full width) so merging this into the shell's own mesh lays
+ * both pieces out ready to print together on one bed and glue afterward.
  */
 function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): MeshBuffer {
   const profile = STEM_PROFILES[params.switchType as Exclude<SwitchType, "none">];
@@ -804,31 +812,35 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
   const bossFloorMm = Math.max(MIN_STEM_WALL_MM, 0.1);
   const bossHeightMm = Math.min(params.socketDepthMm + bossFloorMm, params.heightMm);
   const socketDepthMm = Math.max(bossHeightMm - bossFloorMm, 0.5);
-  const bossBottomZ = 0;
 
   const plateThicknessMm = stemPlateThicknessMm(params);
   const plateProfile = roundedRectProfile(params.widthMm, params.lengthMm, params.cornerRadiusMm, PROFILE_SEGMENTS_PER_CORNER);
-  // Plate sits ABOVE the boss (z: bossHeightMm -> bossHeightMm+plateThicknessMm)
-  // -- its own top face (the far end from the boss) is the glue-to-ceiling
-  // surface; its bottom face is where it welds to the boss beneath it.
-  const plate = loftProfiles(plateProfile, plateProfile, bossHeightMm, bossHeightMm + plateThicknessMm);
+  // Plate's own bottom face (z=0) sits on the print bed -- this is the
+  // glue-to-ceiling face once the piece is flipped for assembly.
+  const plate = loftProfiles(plateProfile, plateProfile, 0, plateThicknessMm);
 
+  const bossRootZ = plateThicknessMm; // where the boss meets the plate (blind end lives here)
+  const bossTipZ = bossRootZ + bossHeightMm; // free end -- the entrance opens here
   const boss = applyTransformToMesh(createCylinderMesh(bossDiameterMm, bossHeightMm, CYLINDER_SEGMENTS), {
-    position: [params.stemOffsetXMm, params.stemOffsetYMm, bossBottomZ + bossHeightMm / 2],
+    position: [params.stemOffsetXMm, params.stemOffsetYMm, bossRootZ + bossHeightMm / 2],
     rotationDeg: [0, 0, 0],
     scale: [1, 1, 1],
   });
   let mesh = engine.union(plate, boss);
 
+  // Mirror image of the in-place version's cutter placement: extends PAST
+  // bossTipZ (by CUT_EXTENSION_MM) so the subtraction cleanly opens at that
+  // real exterior face, and reaches down socketDepthMm from there, leaving
+  // bossFloorMm of solid material near the plate as the blind end.
   const cutterHeightMm = socketDepthMm + CUT_EXTENSION_MM;
-  const cutterCenterZ = bossBottomZ - CUT_EXTENSION_MM + cutterHeightMm / 2;
+  const cutterCenterZ = bossTipZ + CUT_EXTENSION_MM - cutterHeightMm / 2;
   const cutterOffset: [number, number, number] = [params.stemOffsetXMm, params.stemOffsetYMm, cutterCenterZ];
   for (const cutter of profile.buildCutters(params, clampedCharWidthMm, cutterHeightMm, cutterOffset)) {
     mesh = engine.subtract(mesh, cutter);
   }
 
   const chamferCutterHeightMm = ENTRANCE_CHAMFER_HEIGHT_MM + CUT_EXTENSION_MM;
-  const chamferCenterZ = bossBottomZ - CUT_EXTENSION_MM + chamferCutterHeightMm / 2;
+  const chamferCenterZ = bossTipZ + CUT_EXTENSION_MM - chamferCutterHeightMm / 2;
   const chamferOffset: [number, number, number] = [params.stemOffsetXMm, params.stemOffsetYMm, chamferCenterZ];
   const chamferedWidthMm = clampedCharWidthMm + 2 * ENTRANCE_CHAMFER_MM;
   for (const cutter of profile.buildCutters(params, chamferedWidthMm, chamferCutterHeightMm, chamferOffset)) {
