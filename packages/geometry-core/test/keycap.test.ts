@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createKeycapMesh, createKeycapMeshParts, resolveKeycapParams, DEFAULT_KEYCAP_PARAMS, type KeycapParams } from "../src/generators/keycap.js";
+import {
+  createKeycapMesh,
+  createKeycapMeshParts,
+  resolveKeycapParams,
+  stemPlacementOffsetMm,
+  DEFAULT_KEYCAP_PARAMS,
+  type KeycapParams,
+} from "../src/generators/keycap.js";
 import { roundedRectProfile } from "../src/primitives/roundedRect.js";
 import { loftProfiles } from "../src/generators/loft.js";
 import { createCylinderMesh } from "../src/primitives/cylinder.js";
@@ -601,6 +608,36 @@ describe("createKeycapMesh: stemSeparate (boss/socket as its own free-standing p
       expect(report.isWatertight, switchType).toBe(true);
       expect(report.degenerateTriangleCount, switchType).toBe(0);
     }
+  });
+
+  it("stemPlacementOffsetMm matches the actual baked-in stem position, so a caller can undo it and re-lay stems out itself", async () => {
+    const paramsInput = { switchType: "round" as const, stemSeparate: true };
+    const resolved = resolveKeycapParams(paramsInput);
+    const mesh = await createKeycapMesh(paramsInput);
+    const offset = stemPlacementOffsetMm(paramsInput);
+
+    // The stem region's own centroid X should land exactly at the
+    // reported offset (Y stays 0) -- find it via the same "skip the
+    // shell's own footprint" trick used elsewhere in this file.
+    const pos = mesh.positions;
+    let sumX = 0, sumY = 0, count = 0;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      if (pos[i] < resolved.widthMm / 2 + 0.5) continue; // skip the shell's own footprint
+      sumX += pos[i];
+      sumY += pos[i + 1];
+      count++;
+      minX = Math.min(minX, pos[i]);
+      maxX = Math.max(maxX, pos[i]);
+      minY = Math.min(minY, pos[i + 1]);
+      maxY = Math.max(maxY, pos[i + 1]);
+    }
+    // The stem's own bounding-box center (not the vertex centroid, which
+    // would be skewed by the boss/collar having far more vertices than
+    // the plate) should match the reported offset.
+    expect((minX + maxX) / 2).toBeCloseTo(offset.xMm, 3);
+    expect((minY + maxY) / 2).toBeCloseTo(offset.yMm, 3);
+    expect(count).toBeGreaterThan(0);
   });
 
   it("has a small reinforcing collar at the boss/plate joint, wider than the boss but not reaching the socket cutter", async () => {

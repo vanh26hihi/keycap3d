@@ -945,11 +945,27 @@ function buildStandaloneStemMesh(engine: BooleanEngine, params: KeycapParams): M
     mesh = engine.subtract(mesh, cutter);
   }
 
-  // Shell's own right edge (widthMm/2) + this piece's own half-width
-  // (its own stemPlateWidthMm/2, which no longer matches the shell's -- see
-  // stemPlateAuto) + a fixed gap.
-  const offsetXMm = params.widthMm / 2 + params.stemPlateWidthMm / 2 + STEM_SEPARATE_GAP_MM;
-  return applyTransformToMesh(mesh, { position: [offsetXMm, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+  const { xMm: offsetXMm, yMm: offsetYMm } = stemPlacementOffsetMm(params);
+  return applyTransformToMesh(mesh, { position: [offsetXMm, offsetYMm, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] });
+}
+
+/**
+ * The local (X, Y) offset `buildStandaloneStemMesh` bakes into the stem's
+ * own position, relative to its keycap's own local origin -- exported so a
+ * caller juggling MANY keycaps on one bed (the app's own export code, not
+ * this package) can undo it and re-lay the stems out in their own free
+ * space instead. Baking a fixed per-keycap offset works fine for ONE
+ * keycap viewed in isolation, but a dense grid of keycaps (a real batch
+ * export) packs them closer together than this offset clears -- every
+ * stem ends up overlapping its neighbor's shell or stem. Subtracting this
+ * offset from a generated stem mesh recovers its local-origin-centered
+ * position; a caller can then translate it to wherever it actually has
+ * free space (e.g. via a placement search across the whole project, not
+ * just one keycap's own footprint).
+ */
+export function stemPlacementOffsetMm(paramsInput: Partial<KeycapParams>): { xMm: number; yMm: number } {
+  const params = resolveKeycapParams(paramsInput);
+  return { xMm: params.widthMm / 2 + params.stemPlateWidthMm / 2 + STEM_SEPARATE_GAP_MM, yMm: 0 };
 }
 
 /**
