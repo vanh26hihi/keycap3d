@@ -280,6 +280,7 @@ const ICON_LABELS_VI: Record<string, string> = {
   legacyClub: "Chủ bài (♣)",
   legacySparklingHeart: "Trái tim lấp lánh",
   legacyChatBubble: "Bong bóng chat",
+  legacyCollision: "Va chạm / tức giận",
 };
 
 /** Renders one icon's preview: a pixel icon (see geometry-core's
@@ -313,7 +314,21 @@ function IconPreview({ iconId }: { iconId: string }) {
  *  pattern as every other field here (TextAreaField, NumberField): typing
  *  doesn't touch the store until the field loses focus, and an unrecognized
  *  id just reverts the display back to the current selection rather than
- *  clearing it -- there's no "blank" icon state to fall into. */
+ *  clearing it -- there's no "blank" icon state to fall into.
+ *
+ *  Also accepts pasting/typing the icon's own literal character directly
+ *  (e.g. an emoji like "💢" for one of the legacy emoji-font icons) -- an
+ *  exact, case-sensitive match against `char`, checked alongside the
+ *  case-insensitive `id` match, since a legacy icon's `char` IS a real
+ *  Unicode character a user might reasonably paste in expecting it to
+ *  "just work" rather than needing to know its internal id name. A pixel
+ *  icon's own `char` is just its id string again, so this never conflicts
+ *  with the id-name lookup for that set. */
+function findIconMatch(text: string) {
+  const trimmed = text.trim();
+  return ICON_OPTIONS.find((o) => o.id.toLowerCase() === trimmed.toLowerCase() || o.char === trimmed);
+}
+
 function IconIdField({ value, onSelect }: { value: string; onSelect: (char: string) => void }) {
   const currentId = ICON_OPTIONS.find((o) => o.char === value)?.id ?? "";
   const [text, setText] = useState(currentId);
@@ -331,7 +346,7 @@ function IconIdField({ value, onSelect }: { value: string; onSelect: (char: stri
 
   const commit = () => {
     setFocused(false);
-    const match = ICON_OPTIONS.find((o) => o.id.toLowerCase() === text.trim().toLowerCase());
+    const match = findIconMatch(text);
     if (match) {
       setInvalid(false);
       if (match.char !== value) onSelect(match.char);
@@ -344,7 +359,7 @@ function IconIdField({ value, onSelect }: { value: string; onSelect: (char: stri
   // Live preview as the user types -- matched from the live `text` state,
   // not just on commit/blur, so they see the icon shape immediately
   // instead of having to blur first or go hunting through the grid below.
-  const liveMatch = ICON_OPTIONS.find((o) => o.id.toLowerCase() === text.trim().toLowerCase());
+  const liveMatch = findIconMatch(text);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -352,8 +367,8 @@ function IconIdField({ value, onSelect }: { value: string; onSelect: (char: stri
         type="text"
         value={text}
         data-testid="keycap-icon-id-field"
-        placeholder="Gõ tên icon, vd: heart, haha..."
-        title="Gõ đúng tên icon (xem chú thích khi rê chuột vào từng ô bên dưới) rồi Enter/bấm ra ngoài"
+        placeholder="Gõ tên icon (vd: heart) hoặc dán icon 😀 -- chỉ nhận icon có trong danh sách bên dưới"
+        title="Gõ đúng tên icon HOẶC dán thẳng ký tự icon (xem chú thích khi rê chuột vào từng ô bên dưới) rồi Enter/bấm ra ngoài -- chỉ nhận icon có trong danh sách, không phải icon bất kỳ"
         onFocus={() => setFocused(true)}
         onChange={(e) => {
           setText(e.target.value);

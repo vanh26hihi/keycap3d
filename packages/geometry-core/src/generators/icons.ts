@@ -102,6 +102,7 @@ const LEGACY_EMOJI_ICON_OPTIONS: IconOption[] = [
   { id: "legacyClub", char: "♣", label: "Club" },
   { id: "legacySparklingHeart", char: "\u{1F496}", label: "Sparkling heart" },
   { id: "legacyChatBubble", char: "\u{1F4AC}", label: "Chat bubble" },
+  { id: "legacyCollision", char: "\u{1F4A2}", label: "Collision / anger" },
 ];
 
 export const ICON_OPTIONS: IconOption[] = [...PIXEL_ICON_OPTIONS, ...LEGACY_EMOJI_ICON_OPTIONS];
