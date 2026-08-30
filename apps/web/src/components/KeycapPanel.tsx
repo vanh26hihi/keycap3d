@@ -248,9 +248,9 @@ const ICON_LABELS_VI: Record<string, string> = {
   circleO: "Vòng tròn",
   sparklingHeart: "Trái tim lấp lánh",
   ghostAngry: "Ma giận dữ",
+  chatBubble: "Bong bóng chat",
   legacyCheck: "Dấu tích",
   legacyCross: "Dấu X",
-  legacyStar: "Ngôi sao (viền, rỗng)",
   legacyHeart: "Trái tim",
   legacyQuestion: "Dấu hỏi",
   legacyMusic: "Nốt nhạc",
@@ -271,7 +271,6 @@ const ICON_LABELS_VI: Record<string, string> = {
   legacyAnchor: "Mỏ neo",
   legacySnowflake: "Bông tuyết",
   legacyFrown: "Mặt buồn",
-  legacyBrokenHeart: "Trái tim vỡ (viền, rỗng)",
   legacySparkles: "Lấp lánh",
   legacyExclamation: "Dấu chấm than",
   legacyDoubleExclamation: "Hai dấu chấm than",
@@ -279,8 +278,6 @@ const ICON_LABELS_VI: Record<string, string> = {
   legacyInfinity: "Vô cực",
   legacyCircle: "Vòng tròn",
   legacyClub: "Chủ bài (♣)",
-  legacySparklingHeart: "Trái tim lấp lánh (viền, rỗng)",
-  legacyChatBubble: "Bong bóng chat (viền, rỗng)",
   legacyCollision: "Va chạm / tức giận",
 };
 

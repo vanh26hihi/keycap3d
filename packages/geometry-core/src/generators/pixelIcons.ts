@@ -281,6 +281,44 @@ function ghostAngryTest(): (u: number, v: number) => boolean {
   return (u, v) => body(u, v) && !(eyeL(u, v) || eyeR(u, v) || mouth(u, v));
 }
 
+/** A solid speech-bubble silhouette (rounded body + a small tail) -- the
+ *  filled counterpart to legacyChatBubble's hollow-ring emoji glyph. No
+ *  ellipsis dots inside: 3 small same-sized holes this close together
+ *  tripped a real bug in the hole-triangulation path (confirmed by testing
+ *  1/2/3 holes in isolation -- 1 extrudes clean, 2+ leaves open edges), so
+ *  the silhouette alone carries the icon instead. */
+function chatBubbleTest(): (u: number, v: number) => boolean {
+  const halfW = 0.62;
+  const top = 0.55;
+  const bottom = -0.05;
+  const r = 0.32;
+  const rect = polygonTest([
+    [-halfW, bottom],
+    [halfW, bottom],
+    [halfW, top],
+    [-halfW, top],
+  ]);
+  const rounded = unionTest(
+    rect,
+    circleTest(-halfW, bottom + r, r),
+    circleTest(halfW, bottom + r, r),
+    circleTest(-halfW, top - r, r),
+    circleTest(halfW, top - r, r),
+  );
+  // A blunt-tipped trapezoid rather than a sharp triangle -- a point
+  // narrower than ~2 grid cells is a classic marching-squares failure mode
+  // (pixelTrace.ts self-touches at the tip, producing open/non-manifold
+  // edges after extrusion; confirmed by a failing watertightness test with
+  // a true triangular tail).
+  const tail = polygonTest([
+    [-0.5, bottom + 0.1],
+    [-0.12, bottom + 0.1],
+    [-0.32, -0.7],
+    [-0.44, -0.7],
+  ]);
+  return unionTest(rounded, tail);
+}
+
 /** 5x7 pixel glyphs for the one bit of text drawn as a genuine blocky
  *  bitmap -- "HA HA" is the only text-as-icon in the reference image that
  *  actually reads as pixel-font/8-bit style; "Z"/"?"/"!"/"$" are clean
@@ -357,6 +395,7 @@ export const PIXEL_ICON_GRIDS: Record<string, Grid> = {
     unionTest(heartTest(0.75), (u, v) => starTest(4, 0.22, 0.08)(u - 0.95, v - 0.75), (u, v) => starTest(4, 0.16, 0.06)(u - 1.05, v - 0.25)),
   ),
   ghostAngry: sampleShape(ghostAngryTest()),
+  chatBubble: sampleShape(chatBubbleTest()),
 };
 
 export function getPixelIconGrid(id: string): Grid | null {
