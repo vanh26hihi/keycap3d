@@ -55,7 +55,13 @@ export function Toolbar() {
   // now (see collectExportMeshes in lib/importExport.ts), so a project
   // with many keycaps takes a moment, same reason handleExport3mf already
   // tracks its own busy flag.
-  const [exportingAll, setExportingAll] = useState<null | "all" | "keycaps" | "stems" | "3mf">(null);
+  const [exportingAll, setExportingAll] = useState<null | "stl" | "3mf">(null);
+  // What the single "Xuất STL" button includes -- two checkboxes instead of
+  // three separate "all / shells only / stems only" buttons, since those
+  // three buttons were really just the four combinations of these two
+  // booleans (both on being the old "export all") spelled out as buttons.
+  const [includeShells, setIncludeShells] = useState(true);
+  const [includeStems, setIncludeStems] = useState(true);
 
   const handleImportClick = () => fileInputRef.current?.click();
 
@@ -79,12 +85,7 @@ export function Toolbar() {
     downloadBlob(blob, `${node.name || "part"}.stl`);
   };
 
-  const runExportAll = async (
-    kind: "all" | "keycaps" | "stems" | "3mf",
-    build: () => Promise<Blob>,
-    filename: string,
-    failureLabel: string,
-  ) => {
+  const runExportAll = async (kind: "stl" | "3mf", build: () => Promise<Blob>, filename: string, failureLabel: string) => {
     setExportingAll(kind);
     try {
       const blob = await build();
@@ -96,17 +97,30 @@ export function Toolbar() {
     }
   };
 
-  const handleExportAll = () => void runExportAll("all", () => exportAllToSTLBlob(project), "keycap-ban-in.stl", "Xuất tất cả (STL)");
-  const handleExportKeycapsOnly = () =>
-    void runExportAll("keycaps", () => exportKeycapsOnlyToSTLBlob(project), "keycap-vo.stl", "Xuất chỉ vỏ (STL)");
-  const handleExportStemsOnly = () =>
-    void runExportAll("stems", () => exportStemsOnlyToSTLBlob(project), "keycap-chot.stl", "Xuất chỉ chốt (STL)");
+  // Which of the 3 existing export functions to call, and what to name the
+  // file, purely as a function of the 2 checkboxes -- "both" (the old
+  // "export all") when both are on, "shells"/"stems" only when just one is,
+  // and null when neither is (nothing to export, button stays disabled).
+  const stlExportPlan =
+    includeShells && includeStems
+      ? { build: () => exportAllToSTLBlob(project), filename: "keycap-ban-in.stl", label: "Xuất STL" }
+      : includeShells
+        ? { build: () => exportKeycapsOnlyToSTLBlob(project), filename: "keycap-vo.stl", label: "Xuất STL" }
+        : includeStems
+          ? { build: () => exportStemsOnlyToSTLBlob(project), filename: "keycap-chot.stl", label: "Xuất STL" }
+          : null;
+
+  const handleExportSTL = () => {
+    if (!stlExportPlan) return;
+    void runExportAll("stl", stlExportPlan.build, stlExportPlan.filename, stlExportPlan.label);
+  };
   const handleExportAllMultiPart3mf = () =>
     void runExportAll("3mf", () => exportAllMultiPart3MFBlob(project), "keycap-ban-in.3mf", "Xuất 3MF tất cả");
 
   const selectedNode = selectedId ? nodes[selectedId] : null;
   const canExport3mf = !!selectedNode?.parametric;
   const exportAllDisabled = splitActive || project.order.length === 0 || exportingAll !== null;
+  const exportSTLDisabled = exportAllDisabled || !stlExportPlan;
 
   const handleExport3mf = async () => {
     if (!selectedNode?.parametric) return;
@@ -208,35 +222,35 @@ export function Toolbar() {
         >
           Xuất STL
         </button>
+        <label className="toolbar-checkbox" title="Có xuất vỏ keycap vào file STL không">
+          <input
+            type="checkbox"
+            checked={includeShells}
+            onChange={(e) => setIncludeShells(e.target.checked)}
+            disabled={exportAllDisabled}
+            data-testid="export-include-shells"
+          />
+          Vỏ
+        </label>
+        <label className="toolbar-checkbox" title="Có xuất chốt rời (những keycap đã bật 'Tách rời chốt') vào file STL không -- các chốt luôn được xếp lại ở chỗ trống, không đè lên vỏ hay lên nhau">
+          <input
+            type="checkbox"
+            checked={includeStems}
+            onChange={(e) => setIncludeStems(e.target.checked)}
+            disabled={exportAllDisabled}
+            data-testid="export-include-stems"
+          />
+          Chốt
+        </label>
         <button
           type="button"
           className="toolbar-btn"
-          disabled={exportAllDisabled}
-          onClick={handleExportAll}
+          disabled={exportSTLDisabled}
+          onClick={handleExportSTL}
           data-testid="export-all-btn"
-          title="Xuất TẤT CẢ đối tượng đang hiện trong 1 file STL, đúng vị trí như trên bàn in -- chốt rời (nếu có) được xếp lại ở chỗ trống, không đè lên vỏ keycap"
+          title="Xuất các đối tượng đang hiện (theo 2 ô Vỏ/Chốt bên trái) vào 1 file STL, đúng vị trí như trên bàn in"
         >
-          {exportingAll === "all" ? "Đang xuất…" : "Xuất tất cả (STL)"}
-        </button>
-        <button
-          type="button"
-          className="toolbar-btn"
-          disabled={exportAllDisabled}
-          onClick={handleExportKeycapsOnly}
-          data-testid="export-keycaps-only-btn"
-          title="Chỉ xuất vỏ keycap (bỏ qua chốt rời, nếu có) -- để in riêng 1 mẻ toàn vỏ"
-        >
-          {exportingAll === "keycaps" ? "Đang xuất…" : "Xuất chỉ vỏ (STL)"}
-        </button>
-        <button
-          type="button"
-          className="toolbar-btn"
-          disabled={exportAllDisabled}
-          onClick={handleExportStemsOnly}
-          data-testid="export-stems-only-btn"
-          title="Chỉ xuất chốt rời của tất cả keycap có bật 'Tách rời chốt', xếp thành lưới riêng không chồng nhau -- để in riêng 1 mẻ toàn chốt"
-        >
-          {exportingAll === "stems" ? "Đang xuất…" : "Xuất chỉ chốt (STL)"}
+          {exportingAll === "stl" ? "Đang xuất…" : "Xuất STL"}
         </button>
         <button
           type="button"

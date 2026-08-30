@@ -55,6 +55,21 @@ body {
   cursor: not-allowed;
 }
 
+.toolbar-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #e6e6e6;
+  padding: 6px 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.toolbar-checkbox:has(input:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .editor-body {
   flex: 1;
   display: grid;
