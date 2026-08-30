@@ -219,6 +219,68 @@ function flatMouth(): (u: number, v: number) => boolean {
   return (u, v) => Math.abs(v + 0.35) < 0.06 && Math.abs(u) < 0.4;
 }
 
+/** Classic pixel-ghost silhouette: a domed head, straight sides, and a
+ *  scalloped hem (3 rounded legs with gaps between them) -- unlike
+ *  faceTest's bare eyes/mouth (no body outline, since a generic face relies
+ *  on the separately-rendered chat-bubble for its shape), a ghost's body
+ *  silhouette IS the point of the icon, so it gets a real outline here. */
+function ghostBodyTest(): (u: number, v: number) => boolean {
+  const domeR = 0.72;
+  const domeCy = 0.05;
+  const dome = circleTest(0, domeCy, domeR);
+  const rect = polygonTest([
+    [-domeR, domeCy],
+    [domeR, domeCy],
+    [domeR, -0.5],
+    [-domeR, -0.5],
+  ]);
+  const legR = 0.24;
+  const legY = -0.5;
+  const legs = unionTest(circleTest(-0.48, legY, legR), circleTest(0, legY, legR), circleTest(0.48, legY, legR));
+  return unionTest(dome, rect, legs);
+}
+
+/** A bold X mark (two crossing diagonal bars clipped to a square) -- used
+ *  for the angry ghost's eyes. */
+function xMarkTest(cu: number, cv: number, size: number, thickness: number): (u: number, v: number) => boolean {
+  return (u, v) => {
+    const du = u - cu;
+    const dv = v - cv;
+    if (Math.abs(du) > size || Math.abs(dv) > size) return false;
+    return Math.abs(du - dv) <= thickness || Math.abs(du + dv) <= thickness;
+  };
+}
+
+/** A wide flat mouth with two small notches cut into its lower edge --
+ *  reads as a grimacing/toothy frown at icon scale. */
+function angryMouthTest(): (u: number, v: number) => boolean {
+  return polygonTest([
+    [-0.3, -0.05],
+    [0.3, -0.05],
+    [0.3, -0.22],
+    [0.15, -0.22],
+    [0.15, -0.3],
+    [0.05, -0.3],
+    [0.05, -0.22],
+    [-0.05, -0.22],
+    [-0.05, -0.3],
+    [-0.15, -0.3],
+    [-0.15, -0.22],
+    [-0.3, -0.22],
+  ]);
+}
+
+/** Eyes/mouth cut as recessed holes out of the solid ghost body (as opposed
+ *  to faceTest's bare eyes/mouth with no body) -- matches the reference
+ *  angry-ghost keycap: a raised white body with dark facial features. */
+function ghostAngryTest(): (u: number, v: number) => boolean {
+  const body = ghostBodyTest();
+  const eyeL = xMarkTest(-0.3, 0.12, 0.2, 0.085);
+  const eyeR = xMarkTest(0.3, 0.12, 0.2, 0.085);
+  const mouth = angryMouthTest();
+  return (u, v) => body(u, v) && !(eyeL(u, v) || eyeR(u, v) || mouth(u, v));
+}
+
 /** 5x7 pixel glyphs for the one bit of text drawn as a genuine blocky
  *  bitmap -- "HA HA" is the only text-as-icon in the reference image that
  *  actually reads as pixel-font/8-bit style; "Z"/"?"/"!"/"$" are clean
@@ -294,6 +356,7 @@ export const PIXEL_ICON_GRIDS: Record<string, Grid> = {
   sparklingHeart: sampleShape(
     unionTest(heartTest(0.75), (u, v) => starTest(4, 0.22, 0.08)(u - 0.95, v - 0.75), (u, v) => starTest(4, 0.16, 0.06)(u - 1.05, v - 0.25)),
   ),
+  ghostAngry: sampleShape(ghostAngryTest()),
 };
 
 export function getPixelIconGrid(id: string): Grid | null {

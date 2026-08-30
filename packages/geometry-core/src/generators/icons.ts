@@ -56,6 +56,7 @@ const PIXEL_ICON_OPTIONS: IconOption[] = [
   { id: "cross", char: "cross", label: "Cross" },
   { id: "circleO", char: "circleO", label: "Circle" },
   { id: "sparklingHeart", char: "sparklingHeart", label: "Sparkling heart" },
+  { id: "ghostAngry", char: "ghostAngry", label: "Angry ghost" },
 ];
 
 /**
@@ -71,7 +72,17 @@ const PIXEL_ICON_OPTIONS: IconOption[] = [
 const LEGACY_EMOJI_ICON_OPTIONS: IconOption[] = [
   { id: "legacyCheck", char: "✅", label: "Check" },
   { id: "legacyCross", char: "❌", label: "Cross" },
-  { id: "legacyStar", char: "⭐", label: "Star" },
+  // These four render as a hollow/outline shape in this specific Noto
+  // Emoji glyph (a ring/band, not a solid fill) -- confirmed by rasterizing
+  // each glyph's actual fill (see the flattened-contour even-odd fill in
+  // glyphOutline.ts): the glyph's own path data has a same-shape inner
+  // subpath wound opposite the outer one, carving the whole interior out
+  // rather than just a small facial-feature-style detail. Kept (they're
+  // still valid, printable, closed geometry) but labeled "(viền)" in the
+  // Vietnamese UI so picking one doesn't look like a rendering bug -- a
+  // user wanting a SOLID star/heart should reach for starFilled/heartFilled
+  // (pixel-art set) instead.
+  { id: "legacyStar", char: "⭐", label: "Star (outline)" },
   { id: "legacyHeart", char: "❤", label: "Heart" },
   { id: "legacyQuestion", char: "❓", label: "Question" },
   { id: "legacyMusic", char: "\u{1F3B5}", label: "Music note" },
@@ -92,7 +103,7 @@ const LEGACY_EMOJI_ICON_OPTIONS: IconOption[] = [
   { id: "legacyAnchor", char: "⚓", label: "Anchor" },
   { id: "legacySnowflake", char: "❄", label: "Snowflake" },
   { id: "legacyFrown", char: "☹", label: "Frown" },
-  { id: "legacyBrokenHeart", char: "\u{1F494}", label: "Broken heart" },
+  { id: "legacyBrokenHeart", char: "\u{1F494}", label: "Broken heart (outline)" },
   { id: "legacySparkles", char: "✨", label: "Sparkles" },
   { id: "legacyExclamation", char: "❗", label: "Exclamation" },
   { id: "legacyDoubleExclamation", char: "‼", label: "Double exclamation" },
@@ -100,8 +111,8 @@ const LEGACY_EMOJI_ICON_OPTIONS: IconOption[] = [
   { id: "legacyInfinity", char: "♾", label: "Infinity" },
   { id: "legacyCircle", char: "⭕", label: "Circle" },
   { id: "legacyClub", char: "♣", label: "Club" },
-  { id: "legacySparklingHeart", char: "\u{1F496}", label: "Sparkling heart" },
-  { id: "legacyChatBubble", char: "\u{1F4AC}", label: "Chat bubble" },
+  { id: "legacySparklingHeart", char: "\u{1F496}", label: "Sparkling heart (outline)" },
+  { id: "legacyChatBubble", char: "\u{1F4AC}", label: "Chat bubble (outline)" },
   { id: "legacyCollision", char: "\u{1F4A2}", label: "Collision / anger" },
 ];
 
