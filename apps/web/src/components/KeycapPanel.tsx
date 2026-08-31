@@ -271,7 +271,6 @@ const ICON_LABELS_VI: Record<string, string> = {
   legacyAnchor: "Mỏ neo",
   legacySnowflake: "Bông tuyết",
   legacyFrown: "Mặt buồn",
-  legacySparkles: "Lấp lánh",
   legacyExclamation: "Dấu chấm than",
   legacyDoubleExclamation: "Hai dấu chấm than",
   legacyArrowDown: "Mũi tên xuống",

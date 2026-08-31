@@ -73,18 +73,18 @@ const PIXEL_ICON_OPTIONS: IconOption[] = [
 const LEGACY_EMOJI_ICON_OPTIONS: IconOption[] = [
   { id: "legacyCheck", char: "✅", label: "Check" },
   { id: "legacyCross", char: "❌", label: "Cross" },
-  // legacyStar/legacyBrokenHeart/legacySparklingHeart/legacyChatBubble were
-  // dropped from here: each one's Noto Emoji glyph is a hollow/outline
-  // shape (a ring, not a solid fill -- confirmed by rasterizing the glyph's
-  // actual even-odd fill via glyphOutline.ts), and each already has a
-  // solid pixel-art equivalent above (starFilled, brokenHeart,
-  // sparklingHeart, chatBubble) -- keeping both would mean two buttons
-  // producing genuinely different-looking results for what a user expects
-  // to be "the same icon", or (if simply redirected to the same char as
-  // its pixel twin) two buttons doing the exact same thing. The font glyphs
-  // themselves are untouched, so any project saved with one of these
-  // hollow chars still renders exactly as before -- only the picker button
-  // is gone.
+  // legacyStar/legacyBrokenHeart/legacySparklingHeart/legacyChatBubble/
+  // legacySparkles were dropped from here: each one's Noto Emoji glyph is a
+  // hollow/outline shape (a ring, not a solid fill -- confirmed by
+  // rasterizing the glyph's actual even-odd fill via glyphOutline.ts), and
+  // each already has a solid pixel-art equivalent above (starFilled,
+  // brokenHeart, sparklingHeart, chatBubble, sparkleCluster) -- keeping
+  // both would mean two buttons producing genuinely different-looking
+  // results for what a user expects to be "the same icon", or (if simply
+  // redirected to the same char as its pixel twin) two buttons doing the
+  // exact same thing. The font glyphs themselves are untouched, so any
+  // project saved with one of these hollow chars still renders exactly as
+  // before -- only the picker button is gone.
   { id: "legacyHeart", char: "❤", label: "Heart" },
   { id: "legacyQuestion", char: "❓", label: "Question" },
   { id: "legacyMusic", char: "\u{1F3B5}", label: "Music note" },
@@ -105,7 +105,6 @@ const LEGACY_EMOJI_ICON_OPTIONS: IconOption[] = [
   { id: "legacyAnchor", char: "⚓", label: "Anchor" },
   { id: "legacySnowflake", char: "❄", label: "Snowflake" },
   { id: "legacyFrown", char: "☹", label: "Frown" },
-  { id: "legacySparkles", char: "✨", label: "Sparkles" },
   { id: "legacyExclamation", char: "❗", label: "Exclamation" },
   { id: "legacyDoubleExclamation", char: "‼", label: "Double exclamation" },
   { id: "legacyArrowDown", char: "⬇", label: "Arrow down" },
